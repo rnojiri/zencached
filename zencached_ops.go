@@ -77,8 +77,8 @@ func (z *Zencached) executeSend(telnetConn *Telnet, operation MemcachedCommand, 
 		elapsedTime := time.Since(start)
 
 		z.configuration.MetricsCollector.CommandExecutionElapsedTime(
-			operation,
 			telnetConn.GetHost(),
+			operation,
 			path, key,
 			elapsedTime.Milliseconds(),
 		)
@@ -101,14 +101,14 @@ func (z *Zencached) checkResponse(telnetConn *Telnet, checkReadSet, checkRespons
 		}
 
 		if z.enableMetrics {
-			z.configuration.MetricsCollector.CacheMissEvent(operation, telnetConn.GetHost(), path, key)
+			z.configuration.MetricsCollector.CacheMissEvent(telnetConn.GetHost(), operation, path, key)
 		}
 
 		return false, response, nil
 	}
 
 	if z.enableMetrics {
-		z.configuration.MetricsCollector.CacheHitEvent(operation, telnetConn.GetHost(), path, key)
+		z.configuration.MetricsCollector.CacheHitEvent(telnetConn.GetHost(), operation, path, key)
 	}
 
 	return true, response, nil
@@ -153,7 +153,7 @@ func (z *Zencached) Store(cmd MemcachedCommand, routerHash, path, key, value []b
 func (z *Zencached) baseStore(telnetConn *Telnet, cmd MemcachedCommand, path, key, value []byte, ttl uint64) (bool, error) {
 
 	if z.enableMetrics {
-		z.configuration.MetricsCollector.CommandExecution(cmd, telnetConn.GetHost(), path, key)
+		z.configuration.MetricsCollector.CommandExecution(telnetConn.GetHost(), cmd, path, key)
 	}
 
 	err := z.executeSend(telnetConn, cmd, z.renderStoreCmd(cmd, path, key, value, ttl), path, key)
@@ -196,7 +196,7 @@ func (z *Zencached) Get(routerHash, path, key []byte) ([]byte, bool, error) {
 func (z *Zencached) baseGet(telnetConn *Telnet, path, key []byte) ([]byte, bool, error) {
 
 	if z.enableMetrics {
-		z.configuration.MetricsCollector.CommandExecution(Get, telnetConn.GetHost(), path, key)
+		z.configuration.MetricsCollector.CommandExecution(telnetConn.GetHost(), Get, path, key)
 	}
 
 	err := z.executeSend(telnetConn, Get, z.renderKeyOnlyCmd(Get, path, key), path, key)
@@ -256,7 +256,7 @@ func (z *Zencached) Delete(routerHash, path, key []byte) (bool, error) {
 func (z *Zencached) baseDelete(telnetConn *Telnet, path, key []byte) (bool, error) {
 
 	if z.enableMetrics {
-		z.configuration.MetricsCollector.CommandExecution(Delete, telnetConn.GetHost(), path, key)
+		z.configuration.MetricsCollector.CommandExecution(telnetConn.GetHost(), Delete, path, key)
 	}
 
 	err := z.executeSend(telnetConn, Delete, z.renderKeyOnlyCmd(Delete, path, key), path, key)

@@ -63,14 +63,14 @@ type MetricsCollector interface {
 	NodeConnectionAvailabilityTime(node string, elapsedTime int64)
 
 	// CommandExecutionElapsedTime - command execution elapsed time
-	CommandExecutionElapsedTime(operation MemcachedCommand, node string, path, key []byte, elapsedTime int64)
+	CommandExecutionElapsedTime(node string, operation, path, key []byte, elapsedTime int64)
 
 	// CommandExecution - an memcached command event
-	CommandExecution(operation MemcachedCommand, node string, path, key []byte)
+	CommandExecution(node string, operation, path, key []byte)
 
 	// CacheMissEvent - signalizes a cache miss event
-	CacheMissEvent(operation MemcachedCommand, node string, path, key []byte)
+	CacheMissEvent(node string, operation, path, key []byte)
 
 	// CacheHitEvent - signalizes a cache hit event
-	CacheHitEvent(operation MemcachedCommand, node string, path, key []byte)
+	CacheHitEvent(node string, operation, path, key []byte)
 }

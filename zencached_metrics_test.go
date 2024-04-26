@@ -30,25 +30,25 @@ func (mc *metricsCollector) NodeConnectionAvailabilityTime(node string, elapsedT
 }
 
 // CommandExecutionElapsedTime - command execution elapsed time
-func (mc *metricsCollector) CommandExecutionElapsedTime(operation zencached.MemcachedCommand, node string, path, key []byte, elapsedTime int64) {
+func (mc *metricsCollector) CommandExecutionElapsedTime(node string, operation, path, key []byte, elapsedTime int64) {
 
 	mc.numCommandExecutionElapsedTime++
 }
 
 // CommandExecution - an memcached command event
-func (mc *metricsCollector) CommandExecution(operation zencached.MemcachedCommand, node string, path, key []byte) {
+func (mc *metricsCollector) CommandExecution(node string, operation, path, key []byte) {
 
 	mc.numCommandExecution++
 }
 
 // CacheMissEvent - signalizes a cache miss event
-func (mc *metricsCollector) CacheMissEvent(operation zencached.MemcachedCommand, node string, path, key []byte) {
+func (mc *metricsCollector) CacheMissEvent(node string, operation, path, key []byte) {
 
 	mc.numCacheMissEvent++
 }
 
 // CacheHitEvent - signalizes a cache hit event
-func (mc *metricsCollector) CacheHitEvent(operation zencached.MemcachedCommand, node string, path, key []byte) {
+func (mc *metricsCollector) CacheHitEvent(node string, operation, path, key []byte) {
 
 	mc.numCacheHitEvent++
 }
