@@ -3,22 +3,36 @@ package zencached_test
 import (
 	"testing"
 
-	"github.com/uol/zencached"
+	"github.com/rnojiri/zencached"
 )
 
 func Benchmark(b *testing.B) {
 
-	z := createZencached(nil)
+	nodes := startMemcachedCluster()
+	defer terminatePods()
+
+	c := &zencached.Configuration{
+		Nodes:                 nodes,
+		NumConnectionsPerNode: 3,
+		TelnetConfiguration:   *createTelnetConf(),
+	}
+
+	z, err := zencached.New(c)
+	if err != nil {
+		panic(err)
+	}
+
+	path := []byte("benchmark")
 	key := []byte("benchmark")
 	value := []byte("benchmark")
 	route := []byte{0}
 
 	for n := 0; n < b.N; n++ {
-		_, err := z.Storage(zencached.Set, route, key, value, defaultTTL)
+		_, err := z.Store(zencached.Set, route, path, key, value, defaultTTL)
 		if err != nil {
 			panic(err)
 		}
-		_, _, err = z.Get(route, key)
+		_, _, err = z.Get(route, path, key)
 		if err != nil {
 			panic(err)
 		}

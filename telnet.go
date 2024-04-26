@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/uol/logh"
+	"github.com/rnojiri/logh"
 )
 
 //

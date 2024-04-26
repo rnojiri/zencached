@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/uol/logh"
+	"github.com/rnojiri/logh"
 )
 
 //
@@ -17,6 +17,7 @@ import (
 type Configuration struct {
 	Nodes                 []Node
 	NumConnectionsPerNode int
+	MetricsCollector      MetricsCollector
 	TelnetConfiguration
 }
 
@@ -27,12 +28,11 @@ type Zencached struct {
 	configuration      *Configuration
 	logger             *logh.ContextualLogger
 	shuttingDown       uint32
-	metricsCollector   MetricsCollector
 	enableMetrics      bool
 }
 
 // New - creates a new instance
-func New(configuration *Configuration, metricsCollector MetricsCollector) (*Zencached, error) {
+func New(configuration *Configuration) (*Zencached, error) {
 
 	numNodes := len(configuration.Nodes)
 	nodeTelnetConns := make([]chan *Telnet, numNodes)
@@ -54,14 +54,13 @@ func New(configuration *Configuration, metricsCollector MetricsCollector) (*Zenc
 		nodeTelnetConns[i] = channel
 	}
 
-	enableMetrics := metricsCollector != nil
+	enableMetrics := configuration.MetricsCollector != nil
 
 	return &Zencached{
 		nodeTelnetConns:    nodeTelnetConns,
 		numNodeTelnetConns: numNodes,
 		configuration:      configuration,
 		logger:             logh.CreateContextualLogger("pkg", "zencached"),
-		metricsCollector:   metricsCollector,
 		enableMetrics:      enableMetrics,
 	}, nil
 }
@@ -118,27 +117,18 @@ func (z *Zencached) GetTelnetConnByNodeIndex(index int) (telnetConn *Telnet) {
 		telnetConn = <-z.nodeTelnetConns[index]
 		elapsedTime := time.Since(start)
 
-		z.metricsCollector.Count(
-			1,
-			metricNodeDistribution,
-			tagNodeName, telnetConn.GetHost(),
-		)
-
-		z.metricsCollector.Maximum(
-			float64(elapsedTime.Milliseconds()),
-			metricNodeConnAvailableTime,
-			tagNodeName, telnetConn.GetHost(),
-		)
+		z.configuration.MetricsCollector.NodeDistributionEvent(telnetConn.GetHost())
+		z.configuration.MetricsCollector.NodeConnectionAvailabilityTime(telnetConn.GetHost(), elapsedTime.Nanoseconds())
 	}
 
 	return
 }
 
 // GetTelnetConnection - returns an idle telnet connection
-func (z *Zencached) GetTelnetConnection(routerHash []byte, key []byte) (telnetConn *Telnet, index int) {
+func (z *Zencached) GetTelnetConnection(routerHash, path, key []byte) (telnetConn *Telnet, index int) {
 
 	if routerHash == nil {
-		routerHash = key
+		routerHash = append(path, key...)
 	}
 
 	if len(routerHash) == 0 {
