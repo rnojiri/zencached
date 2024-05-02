@@ -18,6 +18,7 @@ var defaultTTL uint64 = 60
 type zencachedTestSuite struct {
 	suite.Suite
 	instance *zencached.Zencached
+	config   *zencached.Configuration
 }
 
 func (ts *zencachedTestSuite) SetupSuite() {
@@ -29,7 +30,7 @@ func (ts *zencachedTestSuite) SetupSuite() {
 	nodes := startMemcachedCluster()
 
 	var err error
-	ts.instance, err = createZencached(nodes, nil)
+	ts.instance, ts.config, err = createZencached(nodes, false, nil)
 	if err != nil {
 		ts.T().Fatalf("expected no errors creating zencached: %v", err)
 	}
@@ -43,21 +44,24 @@ func (ts *zencachedTestSuite) TearDownSuite() {
 }
 
 // createZencached - creates a new client
-func createZencached(nodes []zencached.Node, metricCollector zencached.MetricsCollector) (*zencached.Zencached, error) {
+func createZencached(nodes []zencached.Node, rebalanceOnDisconnection bool, metricCollector zencached.MetricsCollector) (*zencached.Zencached, *zencached.Configuration, error) {
 
 	c := &zencached.Configuration{
-		Nodes:                 nodes,
-		NumConnectionsPerNode: 3,
-		TelnetConfiguration:   *createTelnetConf(),
-		MetricsCollector:      metricCollector,
+		Nodes:                    nodes,
+		NumConnectionsPerNode:    3,
+		TelnetConfiguration:      *createTelnetConf(),
+		MetricsCollector:         metricCollector,
+		RebalanceOnDisconnection: rebalanceOnDisconnection,
+		NumCommandRetries:        1,
+		NodeListRetryTimeout:     100 * time.Millisecond,
 	}
 
 	z, err := zencached.New(c)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return z, nil
+	return z, c, nil
 }
 
 // TestRouting - tests the routing algorithm
@@ -65,7 +69,11 @@ func (ts *zencachedTestSuite) TestRouting() {
 
 	f := func(path, key []byte, expected int) bool {
 
-		tconn, index := ts.instance.GetTelnetConnection(key, path, key)
+		tconn, index, err := ts.instance.GetTelnetConnection(key, path, key)
+		if !ts.NoError(err, "expects no error getting a connection") {
+			return false
+		}
+
 		if !ts.Equalf(expected, index, "expected index %d", expected) {
 			return false
 		}
@@ -90,31 +98,6 @@ func (ts *zencachedTestSuite) TestRouting() {
 	if !f([]byte{206, 98}, []byte{60, 3}, 0) { //should be index 0
 		return
 	}
-}
-
-// TestNodePool - tests the node pool
-func (ts *zencachedTestSuite) TestNodePool() {
-
-	waitTime := 50 * time.Millisecond
-
-	f := func(minExpectedWait, maxExpectedWait time.Duration, testNumber int) {
-
-		start := time.Now()
-		tconn, index := ts.instance.GetTelnetConnection([]byte{44, 11}, []byte{89, 4}, nil)
-
-		totalDuration := time.Since(start)
-
-		ts.Truef(totalDuration.Milliseconds() >= minExpectedWait.Milliseconds() && totalDuration.Milliseconds() < maxExpectedWait.Milliseconds(), "wrong duration for test %d: %d", testNumber, totalDuration.Milliseconds())
-
-		<-time.After(waitTime)
-
-		ts.instance.ReturnTelnetConnection(tconn, index)
-	}
-
-	go f(0*time.Millisecond, 1*time.Millisecond, 1)
-	go f(0*time.Millisecond, 1*time.Millisecond, 2)
-	go f(0*time.Millisecond, 1*time.Millisecond, 3)
-	go f(waitTime, waitTime+(1*time.Millisecond), 4)
 }
 
 // TestAddCommand - tests the add command
@@ -162,7 +145,11 @@ func (ts *zencachedTestSuite) TestGetCommand() {
 
 	f := func(route []byte, path, key, value string, testIndex int) {
 
-		telnetConn, index := ts.instance.GetTelnetConnection(route, []byte(path), []byte(key))
+		telnetConn, index, err := ts.instance.GetTelnetConnection(route, []byte(path), []byte(key))
+		if !ts.NoError(err, "expects no error getting a connection") {
+			return
+		}
+
 		defer ts.instance.ReturnTelnetConnection(telnetConn, index)
 
 		ts.rawSetKey(telnetConn, path, key, value)
@@ -232,7 +219,11 @@ func (ts *zencachedTestSuite) TestDeleteCommand() {
 
 	f := func(route []byte, path, key, value string, setValue bool, testIndex int) {
 
-		telnetConn, index := ts.instance.GetTelnetConnection(route, []byte(path), []byte(key))
+		telnetConn, index, err := ts.instance.GetTelnetConnection(route, []byte(path), []byte(key))
+		if !ts.NoError(err, "expects no error getting a connection") {
+			return
+		}
+
 		defer ts.instance.ReturnTelnetConnection(telnetConn, index)
 
 		if setValue {

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 
 	"github.com/rnojiri/dockerh"
@@ -32,6 +33,17 @@ func init() {
 		memcachedPodNames[i] = fmt.Sprintf("memcached-pod%d", i)
 		memcachedPodPort[i] = 11211 + i
 	}
+}
+
+func createExtraMemcachedPod(t *testing.T) (newPodName string, newNode zencached.Node) {
+
+	var err error
+	newPodName = "extra-memcached-pod"
+	newNode.Port = memcachedPodPort[len(memcachedPodPort)-1] + 1
+	newNode.Host, err = dockerh.CreateMemcached(newPodName, newNode.Port, 64)
+	assert.NoError(t, err, "expected no error creating a new pod")
+
+	return
 }
 
 //
@@ -83,11 +95,12 @@ type telnetTestSuite struct {
 func createTelnetConf() *zencached.TelnetConfiguration {
 
 	return &zencached.TelnetConfiguration{
-		ReconnectionTimeout: 1 * time.Second,
-		MaxWriteTimeout:     5 * time.Second,
-		MaxReadTimeout:      5 * time.Second,
-		MaxWriteRetries:     3,
-		ReadBufferSize:      2048,
+		ReconnectionTimeout:   time.Second,
+		MaxWriteTimeout:       time.Second,
+		MaxReadTimeout:        time.Second,
+		HostConnectionTimeout: time.Second,
+		MaxWriteRetries:       3,
+		ReadBufferSize:        2048,
 	}
 }
 
@@ -100,7 +113,7 @@ func (ts *telnetTestSuite) SetupSuite() {
 	nodes := startMemcachedCluster()
 
 	var err error
-	ts.telnet, err = zencached.NewTelnet(&nodes[rand.Intn(len(nodes))], createTelnetConf())
+	ts.telnet, err = zencached.NewTelnet(nodes[rand.Intn(len(nodes))], *createTelnetConf())
 	if err != nil {
 		ts.T().Fatal(err)
 	}

@@ -49,6 +49,9 @@ type IZencached interface {
 
 	// ClusterDelete - deletes a key from all cluster nodes
 	ClusterDelete(path, key []byte) ([]bool, []error)
+
+	// Rebalance - rebalance all nodes using the configured node listing function or the configured nodes by default
+	Rebalance() error
 }
 
 var _ IZencached = (*Zencached)(nil)

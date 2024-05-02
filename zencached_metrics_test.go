@@ -80,7 +80,7 @@ func (ts *zencachedMetricsTestSuite) SetupSuite() {
 	ts.metrics = &metricsCollector{}
 
 	var err error
-	ts.instance, err = createZencached(nodes, ts.metrics)
+	ts.instance, _, err = createZencached(nodes, false, ts.metrics)
 	if err != nil {
 		ts.T().Fatalf("expected no errors creating zencached: %v", err)
 	}
