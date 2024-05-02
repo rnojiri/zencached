@@ -15,7 +15,13 @@ func (z *Zencached) ClusterStore(cmd MemcachedCommand, path, key, value []byte, 
 
 	for i := 0; i < z.numNodeTelnetConns; i++ {
 
-		telnetConn := z.GetTelnetConnByNodeIndex(i)
+		var telnetConn *Telnet
+
+		telnetConn, errors[i] = z.GetTelnetConnByNodeIndex(i)
+		if errors[i] != nil {
+			continue
+		}
+
 		defer z.ReturnTelnetConnection(telnetConn, i)
 
 		stored[i], errors[i] = z.baseStore(telnetConn, cmd, path, key, value, ttl)
@@ -29,7 +35,11 @@ func (z *Zencached) ClusterGet(path, key []byte) ([]byte, bool, error) {
 
 	index := rand.Intn(z.numNodeTelnetConns)
 
-	telnetConn := z.GetTelnetConnByNodeIndex(index)
+	telnetConn, err := z.GetTelnetConnByNodeIndex(index)
+	if err != nil {
+		return nil, false, err
+	}
+
 	defer z.ReturnTelnetConnection(telnetConn, index)
 
 	return z.baseGet(telnetConn, path, key)
@@ -43,7 +53,12 @@ func (z *Zencached) ClusterDelete(path, key []byte) ([]bool, []error) {
 
 	for i := 0; i < z.numNodeTelnetConns; i++ {
 
-		telnetConn := z.GetTelnetConnByNodeIndex(i)
+		var telnetConn *Telnet
+		telnetConn, errors[i] = z.GetTelnetConnByNodeIndex(i)
+		if errors[i] != nil {
+			continue
+		}
+
 		defer z.ReturnTelnetConnection(telnetConn, i)
 
 		deleted[i], errors[i] = z.baseDelete(telnetConn, path, key)

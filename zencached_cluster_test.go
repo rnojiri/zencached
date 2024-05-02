@@ -28,10 +28,14 @@ func (ts *zencachedTestSuite) TestClusterStoreCommand() {
 			return
 		}
 
-		telnetConn := ts.instance.GetTelnetConnByNodeIndex(i)
+		telnetConn, err := ts.instance.GetTelnetConnByNodeIndex(i)
+		if !ts.NoError(err, "expects no error getting a connection") {
+			return
+		}
+
 		defer ts.instance.ReturnTelnetConnection(telnetConn, i)
 
-		err := telnetConn.Send([]byte("get " + string(path) + string(key) + "\r\n"))
+		err = telnetConn.Send([]byte("get " + string(path) + string(key) + "\r\n"))
 		if !ts.NoError(err, "expected success getting key") {
 			return
 		}
@@ -51,7 +55,11 @@ func (ts *zencachedTestSuite) TestClusterStoreCommand() {
 func (ts *zencachedTestSuite) rawSetKeyOnAllNodes(path, key, value string) {
 
 	for i := 0; i < numNodes; i++ {
-		telnetConn := ts.instance.GetTelnetConnByNodeIndex(i)
+		telnetConn, err := ts.instance.GetTelnetConnByNodeIndex(i)
+		if !ts.NoError(err, "expects no error getting a connection") {
+			return
+		}
+
 		ts.rawSetKey(telnetConn, path, key, value)
 		ts.instance.ReturnTelnetConnection(telnetConn, i)
 	}
@@ -109,10 +117,14 @@ func (ts *zencachedTestSuite) TestClusterDeleteCommand() {
 			return
 		}
 
-		telnetConn := ts.instance.GetTelnetConnByNodeIndex(i)
+		telnetConn, err := ts.instance.GetTelnetConnByNodeIndex(i)
+		if !ts.NoError(err, "expects no error getting a connection") {
+			return
+		}
+
 		defer ts.instance.ReturnTelnetConnection(telnetConn, i)
 
-		err := telnetConn.Send([]byte("get " + key + "\r\n"))
+		err = telnetConn.Send([]byte("get " + key + "\r\n"))
 		if !ts.NoError(err, "expected success getting key") {
 			return
 		}

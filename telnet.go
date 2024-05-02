@@ -2,6 +2,7 @@ package zencached
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -22,6 +23,8 @@ const (
 	read  operation = "read"
 	write operation = "write"
 )
+
+var ErrMaxReconnectionsReached error = errors.New("maximum number of reconnections reached")
 
 // Node - a memcached node
 type Node struct {
@@ -45,6 +48,9 @@ type TelnetConfiguration struct {
 	// MaxReadTimeout - the max time duration to wait a read operation
 	MaxReadTimeout time.Duration
 
+	// HostConnectionTimeout - the max time duration to wait to connect to a host
+	HostConnectionTimeout time.Duration
+
 	// MaxWriteRetries - the maximum number of write retries
 	MaxWriteRetries int
 
@@ -52,17 +58,42 @@ type TelnetConfiguration struct {
 	ReadBufferSize int
 }
 
+func (tc *TelnetConfiguration) setDefaults() {
+
+	if tc.ReconnectionTimeout == 0 {
+		tc.ReconnectionTimeout = time.Second
+	}
+
+	if tc.MaxWriteTimeout == 0 {
+		tc.MaxWriteTimeout = time.Second
+	}
+
+	if tc.MaxReadTimeout == 0 {
+		tc.MaxReadTimeout = time.Second
+	}
+
+	if tc.ReadBufferSize == 0 {
+		tc.ReadBufferSize = 64
+	}
+
+	if tc.HostConnectionTimeout == 0 {
+		tc.HostConnectionTimeout = 5 * time.Second
+	}
+}
+
 // Telnet - the telnet structure
 type Telnet struct {
 	address       *net.TCPAddr
 	connection    *net.TCPConn
 	logger        *logh.ContextualLogger
-	configuration *TelnetConfiguration
-	node          *Node
+	configuration TelnetConfiguration
+	node          Node
 }
 
 // NewTelnet - creates a new telnet connection
-func NewTelnet(node *Node, configuration *TelnetConfiguration) (*Telnet, error) {
+func NewTelnet(node Node, configuration TelnetConfiguration) (*Telnet, error) {
+
+	configuration.setDefaults()
 
 	if len(strings.TrimSpace(node.Host)) == 0 {
 		return nil, fmt.Errorf("empty server host configured")
@@ -82,7 +113,7 @@ func NewTelnet(node *Node, configuration *TelnetConfiguration) (*Telnet, error) 
 }
 
 // resolveServerAddress - configures the server address
-func (t *Telnet) resolveServerAddress() error {
+func (t *Telnet) resolveServerAddress() (string, error) {
 
 	hostPort := fmt.Sprintf("%s:%d", t.node.Host, t.node.Port)
 
@@ -96,16 +127,20 @@ func (t *Telnet) resolveServerAddress() error {
 		if logh.ErrorEnabled {
 			t.logger.Error().Err(err).Msgf("error resolving address: %s", hostPort)
 		}
-		return err
+		return "", err
 	}
 
-	return nil
+	return hostPort, nil
 }
 
 // Connect - try to Connect the telnet server
 func (t *Telnet) Connect() error {
 
-	err := t.resolveServerAddress()
+	if logh.DebugEnabled {
+		t.logger.Debug().Msgf("trying to connect to host: %s:%d", t.node.Host, t.node.Port)
+	}
+
+	hostPort, err := t.resolveServerAddress()
 	if err != nil {
 		return err
 	}
@@ -116,7 +151,7 @@ func (t *Telnet) Connect() error {
 	}
 
 	if logh.InfoEnabled {
-		t.logger.Info().Msg("connected!")
+		t.logger.Info().Msgf("connected to host: %s", hostPort)
 	}
 
 	return nil
@@ -124,6 +159,8 @@ func (t *Telnet) Connect() error {
 
 // dial - connects the telnet client
 func (t *Telnet) dial() error {
+
+	now := time.Now()
 
 	var err error
 	t.connection, err = net.DialTCP("tcp", nil, t.address)
@@ -134,13 +171,15 @@ func (t *Telnet) dial() error {
 		return err
 	}
 
-	err = t.connection.SetDeadline(time.Time{})
+	err = t.connection.SetDeadline(time.Now().Add(t.configuration.ReconnectionTimeout))
 	if err != nil {
 		if logh.ErrorEnabled {
 			t.logger.Error().Err(err).Msg("error setting connection's deadline")
 		}
 		return err
 	}
+
+	t.logger.Warn().Msgf("resolve: %s", time.Since(now))
 
 	return nil
 }
@@ -171,16 +210,28 @@ func (t *Telnet) Send(command ...[]byte) error {
 
 	var err error
 	for _, c := range command {
+	innerLoop:
 		for i := 0; i < t.configuration.MaxWriteRetries; i++ {
+
 			if !t.writePayload(c) {
+
 				t.Close()
+
 				err = t.Connect()
 				if err != nil {
+					if i+1 == t.configuration.MaxWriteRetries {
+						if logh.DebugEnabled {
+							t.logger.Debug().Err(err).Msg("maximum number of connections retries reached")
+						}
+
+						return fmt.Errorf("%w: %s", ErrMaxReconnectionsReached, err)
+					}
+
 					<-time.After(t.configuration.ReconnectionTimeout)
 					continue
 				}
 			} else {
-				break
+				break innerLoop
 			}
 		}
 	}
