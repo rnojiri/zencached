@@ -320,8 +320,8 @@ func (z *Zencached) ReturnTelnetConnection(telnetConn *Telnet, index int) {
 	z.nodeTelnetConns[index] <- telnetConn
 }
 
-// GetNodes - returns the currently connected nodes
-func (z *Zencached) GetNodes() []Node {
+// GetConnectedNodes - returns the currently connected nodes
+func (z *Zencached) GetConnectedNodes() []Node {
 
 	c := make([]Node, len(z.connectedNodes))
 	copy(c, z.connectedNodes)

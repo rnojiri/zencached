@@ -32,8 +32,11 @@ type IZencached interface {
 	// Shutdown - closes all connections
 	Shutdown()
 
-	// Store - performs an storage operation
-	Store(cmd MemcachedCommand, routerHash, path, key, value []byte, ttl uint64) (bool, error)
+	// Set - performs an storage set operation
+	Set(routerHash, path, key, value []byte, ttl uint64) (bool, error)
+
+	// Add - performs an storage add operation
+	Add(routerHash, path, key, value []byte, ttl uint64) (bool, error)
 
 	// Get - performs a get operation
 	Get(routerHash, path, key []byte) ([]byte, bool, error)
@@ -41,17 +44,23 @@ type IZencached interface {
 	// Delete - performs a delete operation
 	Delete(routerHash, path, key []byte) (bool, error)
 
-	// ClusterStore - performs an full operation operation
-	ClusterStore(cmd MemcachedCommand, path, key, value []byte, ttl uint64) ([]bool, []error)
+	// ClusterSet - performs an full storage set operation
+	ClusterSet(path, key, value []byte, ttl uint64) ([]bool, []error)
+
+	// ClusterAdd - performs an full storage add operation
+	ClusterAdd(path, key, value []byte, ttl uint64) ([]bool, []error)
 
 	// ClusterGet - returns a full replicated key stored in the cluster
-	ClusterGet(path, key []byte) ([]byte, bool, error)
+	ClusterGet(path, key []byte) ([][]byte, []bool, []error)
 
 	// ClusterDelete - deletes a key from all cluster nodes
 	ClusterDelete(path, key []byte) ([]bool, []error)
 
 	// Rebalance - rebalance all nodes using the configured node listing function or the configured nodes by default
 	Rebalance() error
+
+	// GetConnectedNodes - returns the currently connected nodes
+	GetConnectedNodes() []Node
 }
 
 var _ IZencached = (*Zencached)(nil)
@@ -70,6 +79,9 @@ type MetricsCollector interface {
 
 	// CommandExecution - an memcached command event
 	CommandExecution(node string, operation, path, key []byte)
+
+	// CommandExecutionError - signalizes an error executing a command
+	CommandExecutionError(node string, operation, path, key []byte, err error)
 
 	// CacheMissEvent - signalizes a cache miss event
 	CacheMissEvent(node string, operation, path, key []byte)

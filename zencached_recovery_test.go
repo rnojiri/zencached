@@ -62,7 +62,7 @@ func (ts *zencachedRecoveryTestSuite) loopCommands(exitLoop chan struct{}) {
 				return
 			}
 
-			_, err = ts.instance.Store(zencached.Set, nil, path, key, key, defaultTTL)
+			_, err = ts.instance.Set(nil, path, key, key, defaultTTL)
 			if err != nil && !isErrMaxCommandRetriesReached(err) {
 				return
 			}
@@ -93,7 +93,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceRemovingNode() {
 
 	ts.config.NodeListFunction = func() ([]zencached.Node, error) {
 
-		original = ts.instance.GetNodes()
+		original = ts.instance.GetConnectedNodes()
 		minusTwo = original[0 : len(original)-2]
 
 		return minusTwo, nil
@@ -104,7 +104,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceRemovingNode() {
 		return
 	}
 
-	after := ts.instance.GetNodes()
+	after := ts.instance.GetConnectedNodes()
 	ts.ElementsMatch(minusTwo, after, "expected same nodes")
 
 	ts.config.NodeListFunction = func() ([]zencached.Node, error) {
@@ -117,7 +117,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceRemovingNode() {
 		return
 	}
 
-	after = ts.instance.GetNodes()
+	after = ts.instance.GetConnectedNodes()
 	ts.ElementsMatch(original, after, "expected same nodes")
 
 	<-time.After(100 * time.Millisecond)
@@ -136,7 +136,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceAddingNode() {
 
 	go ts.loopCommands(exitLoop)
 
-	original := ts.instance.GetNodes()
+	original := ts.instance.GetConnectedNodes()
 
 	newPodName, newNode := createExtraMemcachedPod(ts.T())
 	defer dockerh.Remove(newPodName)
@@ -153,7 +153,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceAddingNode() {
 		return
 	}
 
-	after := ts.instance.GetNodes()
+	after := ts.instance.GetConnectedNodes()
 	ts.ElementsMatch(newNodeConf, after, "expected same nodes")
 
 	ts.config.NodeListFunction = func() ([]zencached.Node, error) {
@@ -166,7 +166,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceAddingNode() {
 		return
 	}
 
-	after = ts.instance.GetNodes()
+	after = ts.instance.GetConnectedNodes()
 	ts.ElementsMatch(original, after, "expected same nodes")
 
 	<-time.After(100 * time.Millisecond)
@@ -218,25 +218,15 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 
 	terminatePods()
 
-	now := time.Now()
-
 	_, _, err = ts.instance.Get(nil, []byte("p"), []byte("k"))
 	if !ts.True(errors.Is(err, zencached.ErrMaxCommandRetriesReached), "expected an error describing max command retries") {
 		return
 	}
 
-	fmt.Printf("first get: %s\n", time.Since(now))
-
-	now = time.Now()
-
 	err = ts.instance.Rebalance()
 	if !ts.NoError(err, "expected no error rebalancing nodes") {
 		return
 	}
-
-	fmt.Printf("rebalance: %s\n", time.Since(now))
-
-	now = time.Now()
 
 	for i := 0; i < 100; i++ {
 		_, _, err = ts.instance.Get(nil, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
@@ -245,20 +235,12 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 		}
 	}
 
-	fmt.Printf("loop get: %s\n", time.Since(now))
-
 	startMemcachedCluster()
-
-	now = time.Now()
 
 	err = ts.instance.Rebalance()
 	if !ts.NoError(err, "expected no error rebalancing nodes") {
 		return
 	}
-
-	fmt.Printf("rebalance 2: %s\n", time.Since(now))
-
-	now = time.Now()
 
 	for i := 0; i < 100; i++ {
 		_, _, err = ts.instance.Get(nil, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
@@ -266,8 +248,6 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 			return
 		}
 	}
-
-	fmt.Printf("second get: %s\n", time.Since(now))
 }
 
 func TestZencachedRecoveryTestSuite(t *testing.T) {

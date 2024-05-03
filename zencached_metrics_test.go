@@ -3,9 +3,15 @@ package zencached_test
 import (
 	"testing"
 
+	"github.com/rnojiri/dockerh"
 	"github.com/rnojiri/logh"
 	"github.com/rnojiri/zencached"
 	"github.com/stretchr/testify/suite"
+)
+
+const (
+	memcachedMetricsPodName string = "memcached-metrics-pod"
+	memcachedMetricsPodPort int    = 11211
 )
 
 type metricsCollector struct {
@@ -13,6 +19,7 @@ type metricsCollector struct {
 	numNodeConnectionAvailabilityTime int
 	numCommandExecutionElapsedTime    int
 	numCommandExecution               int
+	numCommandExecutionError          int
 	numCacheMissEvent                 int
 	numCacheHitEvent                  int
 }
@@ -53,6 +60,11 @@ func (mc *metricsCollector) CacheHitEvent(node string, operation, path, key []by
 	mc.numCacheHitEvent++
 }
 
+func (mc *metricsCollector) CommandExecutionError(node string, operation, path, key []byte, err error) {
+
+	mc.numCommandExecutionError++
+}
+
 func (mc *metricsCollector) zero() {
 
 	mc.numNodeDistributionEvent = 0
@@ -61,6 +73,7 @@ func (mc *metricsCollector) zero() {
 	mc.numCommandExecution = 0
 	mc.numCacheMissEvent = 0
 	mc.numCacheHitEvent = 0
+	mc.numCommandExecutionError = 0
 }
 
 type zencachedMetricsTestSuite struct {
@@ -75,12 +88,14 @@ func (ts *zencachedMetricsTestSuite) SetupSuite() {
 
 	terminatePods()
 
-	nodes := startMemcachedCluster()
+	host, err := dockerh.CreateMemcached(memcachedMetricsPodName, memcachedMetricsPodPort, 64)
+	if err != nil {
+		ts.T().Fatalf("expected no errors creating memcached metrics pod: %v", err)
+	}
 
 	ts.metrics = &metricsCollector{}
 
-	var err error
-	ts.instance, _, err = createZencached(nodes, false, ts.metrics)
+	ts.instance, _, err = createZencached([]zencached.Node{{Host: host, Port: memcachedMetricsPodPort}}, false, ts.metrics)
 	if err != nil {
 		ts.T().Fatalf("expected no errors creating zencached: %v", err)
 	}
@@ -108,8 +123,8 @@ func (ts *zencachedMetricsTestSuite) TestNodeDistributionEvents() {
 
 func (ts *zencachedMetricsTestSuite) TestCommandExecutionEvents() {
 
-	ts.instance.Store(zencached.Add, nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
-	ts.instance.Store(zencached.Set, nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
+	ts.instance.Add(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
+	ts.instance.Set(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
 	ts.instance.Get(nil, []byte("path1"), []byte("key1"))
 	ts.instance.Delete(nil, []byte("path1"), []byte("key1"))
 
@@ -128,12 +143,28 @@ func (ts *zencachedMetricsTestSuite) TestCacheMissEvents() {
 
 func (ts *zencachedMetricsTestSuite) TestCacheHitEvents() {
 
-	ts.instance.Store(zencached.Add, nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
+	ts.instance.Set(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
 	ts.instance.Get(nil, []byte("path1"), []byte("key1"))
 	ts.instance.ClusterGet([]byte("path1"), []byte("key1"))
 	ts.instance.Delete(nil, []byte("path1"), []byte("key1"))
 
 	ts.Equal(3, ts.metrics.numCacheHitEvent, "expects two cache hit events")
+}
+
+// TestZCacheHitEvents - executes last because of the 'Z'
+func (ts *zencachedMetricsTestSuite) TestZCommandExecutionError() {
+
+	err := dockerh.Remove(memcachedMetricsPodName)
+	if !ts.NoError(err, "expected no errors removing memcached metrics pod: %v", err) {
+		return
+	}
+
+	ts.instance.Add(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
+	ts.instance.Get(nil, []byte("path1"), []byte("key1"))
+	ts.instance.ClusterGet([]byte("path1"), []byte("key1"))
+	ts.instance.Delete(nil, []byte("path1"), []byte("key1"))
+
+	ts.Equal(8, ts.metrics.numCommandExecutionError, "expects four command execution error events")
 }
 
 func TestZencachedMetricsSuite(t *testing.T) {
