@@ -2,18 +2,16 @@ package zencached_test
 
 import (
 	"bytes"
-
-	"github.com/rnojiri/zencached"
 )
 
-// TestClusterStoreCommand - tests the cluster storage command
-func (ts *zencachedTestSuite) TestClusterStoreCommand() {
+// TestClusterSetCommand - tests the cluster storage command
+func (ts *zencachedTestSuite) TestClusterSetCommand() {
 
 	path := []byte("path")
 	key := []byte("cluster-storage")
 	value := []byte("cluster-value-storage")
 
-	stored, errors := ts.instance.ClusterStore(zencached.Set, path, key, value, defaultTTL)
+	stored, errors := ts.instance.ClusterSet(path, key, value, defaultTTL)
 
 	if !ts.Len(stored, numNodes, "wrong number of nodes") {
 		return
@@ -76,18 +74,21 @@ func (ts *zencachedTestSuite) TestClusterGetCommand() {
 
 	for i := 0; i < 1000; i++ {
 
-		storedValue, stored, err := ts.instance.ClusterGet([]byte(path), []byte(key))
+		values, exists, errs := ts.instance.ClusterGet([]byte(path), []byte(key))
 
-		if !ts.NoErrorf(err, "unexpected error on tentative: %d", i) {
-			return
-		}
+		for i := 0; i < numNodes; i++ {
 
-		if !ts.Truef(stored, "expected value to be stored on tentative: %d", i) {
-			return
-		}
+			if !ts.NoErrorf(errs[i], "unexpected error on cluster get: %d", i) {
+				return
+			}
 
-		if !ts.Equalf([]byte(value), storedValue, "expected the same value stored", i) {
-			return
+			if !ts.Truef(exists[i], "expected value to be stored on cluster get: %d", i) {
+				return
+			}
+
+			if !ts.Equalf([]byte(value), values[i], "expected the same value stored", i) {
+				return
+			}
 		}
 	}
 }

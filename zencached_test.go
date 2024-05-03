@@ -105,7 +105,7 @@ func (ts *zencachedTestSuite) TestAddCommand() {
 
 	f := func(route []byte, path, key, value string, expectedStored bool, testIndex int) {
 
-		stored, err := ts.instance.Store(zencached.Add, route, []byte(path), []byte(key), []byte(value), defaultTTL)
+		stored, err := ts.instance.Add(route, []byte(path), []byte(key), []byte(value), defaultTTL)
 		if !ts.NoError(err, "expected no error storing key") {
 			return
 		}
@@ -182,7 +182,7 @@ func (ts *zencachedTestSuite) TestSetCommand() {
 
 	f := func(route []byte, path, key, value string, testIndex int) {
 
-		stored, err := ts.instance.Store(zencached.Set, route, []byte(path), []byte(key), []byte(value), defaultTTL)
+		stored, err := ts.instance.Set(route, []byte(path), []byte(key), []byte(value), defaultTTL)
 		if !ts.NoError(err, "expected no error storing key") {
 			return
 		}

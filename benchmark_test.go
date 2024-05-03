@@ -28,7 +28,7 @@ func Benchmark(b *testing.B) {
 	route := []byte{0}
 
 	for n := 0; n < b.N; n++ {
-		_, err := z.Store(zencached.Set, route, path, key, value, defaultTTL)
+		_, err := z.Set(route, path, key, value, defaultTTL)
 		if err != nil {
 			panic(err)
 		}

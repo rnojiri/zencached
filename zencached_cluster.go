@@ -1,14 +1,24 @@
 package zencached
 
-import "math/rand"
-
 //
 // Functions to distribute a key to all the cluster.
 // author: rnojiri
 //
 
-// ClusterStore - performs an full operation operation
-func (z *Zencached) ClusterStore(cmd MemcachedCommand, path, key, value []byte, ttl uint64) ([]bool, []error) {
+// ClusterSet - performs an full set operation operation
+func (z *Zencached) ClusterSet(path, key, value []byte, ttl uint64) ([]bool, []error) {
+
+	return z.clusterStore(Set, path, key, value, ttl)
+}
+
+// ClusterAdd - performs an full add operation operation
+func (z *Zencached) ClusterAdd(path, key, value []byte, ttl uint64) ([]bool, []error) {
+
+	return z.clusterStore(Add, path, key, value, ttl)
+}
+
+// clusterStore - performs an full storage operation operation
+func (z *Zencached) clusterStore(cmd MemcachedCommand, path, key, value []byte, ttl uint64) ([]bool, []error) {
 
 	stored := make([]bool, z.numNodeTelnetConns)
 	errors := make([]error, z.numNodeTelnetConns)
@@ -16,7 +26,6 @@ func (z *Zencached) ClusterStore(cmd MemcachedCommand, path, key, value []byte, 
 	for i := 0; i < z.numNodeTelnetConns; i++ {
 
 		var telnetConn *Telnet
-
 		telnetConn, errors[i] = z.GetTelnetConnByNodeIndex(i)
 		if errors[i] != nil {
 			continue
@@ -24,25 +33,33 @@ func (z *Zencached) ClusterStore(cmd MemcachedCommand, path, key, value []byte, 
 
 		defer z.ReturnTelnetConnection(telnetConn, i)
 
-		stored[i], errors[i] = z.baseStore(telnetConn, cmd, path, key, value, ttl)
+		stored[i], errors[i] = z.baseStore(telnetConn, cmd, cmd, path, key, value, ttl)
 	}
 
 	return stored, errors
 }
 
 // ClusterGet - returns a full replicated key stored in the cluster
-func (z *Zencached) ClusterGet(path, key []byte) ([]byte, bool, error) {
+func (z *Zencached) ClusterGet(path, key []byte) ([][]byte, []bool, []error) {
 
-	index := rand.Intn(z.numNodeTelnetConns)
+	values := make([][]byte, z.numNodeTelnetConns)
+	exists := make([]bool, z.numNodeTelnetConns)
+	errors := make([]error, z.numNodeTelnetConns)
 
-	telnetConn, err := z.GetTelnetConnByNodeIndex(index)
-	if err != nil {
-		return nil, false, err
+	for i := 0; i < z.numNodeTelnetConns; i++ {
+
+		var telnetConn *Telnet
+		telnetConn, errors[i] = z.GetTelnetConnByNodeIndex(i)
+		if errors[i] != nil {
+			continue
+		}
+
+		defer z.ReturnTelnetConnection(telnetConn, i)
+
+		values[i], exists[i], errors[i] = z.baseGet(telnetConn, path, key)
 	}
 
-	defer z.ReturnTelnetConnection(telnetConn, index)
-
-	return z.baseGet(telnetConn, path, key)
+	return values, exists, errors
 }
 
 // ClusterDelete - deletes a key from all cluster nodes

@@ -160,8 +160,6 @@ func (t *Telnet) Connect() error {
 // dial - connects the telnet client
 func (t *Telnet) dial() error {
 
-	now := time.Now()
-
 	var err error
 	t.connection, err = net.DialTCP("tcp", nil, t.address)
 	if err != nil {
@@ -178,8 +176,6 @@ func (t *Telnet) dial() error {
 		}
 		return err
 	}
-
-	t.logger.Warn().Msgf("resolve: %s", time.Since(now))
 
 	return nil
 }
