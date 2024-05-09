@@ -44,16 +44,18 @@ func (ts *zencachedTestSuite) TearDownSuite() {
 }
 
 // createZencached - creates a new client
-func createZencached(nodes []zencached.Node, rebalanceOnDisconnection bool, metricCollector zencached.MetricsCollector) (*zencached.Zencached, *zencached.Configuration, error) {
+func createZencached(nodes []zencached.Node, rebalanceOnDisconnection bool, metricCollector zencached.ZencachedMetricsCollector) (*zencached.Zencached, *zencached.Configuration, error) {
 
 	c := &zencached.Configuration{
 		Nodes:                    nodes,
 		NumConnectionsPerNode:    3,
-		TelnetConfiguration:      *createTelnetConf(),
+		TelnetConfiguration:      *createTelnetConf(nil),
 		MetricsCollector:         metricCollector,
 		RebalanceOnDisconnection: rebalanceOnDisconnection,
-		NumCommandRetries:        1,
+		NumNodeListRetries:       1,
 		NodeListRetryTimeout:     100 * time.Millisecond,
+		MaxWaitForConnection:     1 * time.Second,
+		WaitTimeForConnection:    100 * time.Microsecond,
 	}
 
 	z, err := zencached.New(c)

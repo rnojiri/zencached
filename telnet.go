@@ -2,7 +2,6 @@ package zencached
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -24,8 +23,6 @@ const (
 	write operation = "write"
 )
 
-var ErrMaxReconnectionsReached error = errors.New("maximum number of reconnections reached")
-
 // Node - a memcached node
 type Node struct {
 
@@ -34,6 +31,12 @@ type Node struct {
 
 	// Port - the server's port
 	Port int
+}
+
+// String - returns a string under the format "host:port"
+func (n Node) String() string {
+
+	return fmt.Sprintf("%s:%d", n.Host, n.Port)
 }
 
 // TelnetConfiguration - contains the telnet connection configuration
@@ -56,6 +59,9 @@ type TelnetConfiguration struct {
 
 	// ReadBufferSize - the size of the read buffer in bytes
 	ReadBufferSize int
+
+	// MetricsCollector - collects metrics related with telnet
+	MetricsCollector TelnetMetricsCollector
 }
 
 func (tc *TelnetConfiguration) setDefaults() {
@@ -140,12 +146,35 @@ func (t *Telnet) Connect() error {
 		t.logger.Debug().Msgf("trying to connect to host: %s:%d", t.node.Host, t.node.Port)
 	}
 
-	hostPort, err := t.resolveServerAddress()
+	var hostPort string
+	var err error
+
+	if t.configuration.MetricsCollector == nil {
+
+		hostPort, err = t.resolveServerAddress()
+
+	} else {
+
+		start := time.Now()
+		hostPort, err = t.resolveServerAddress()
+		t.configuration.MetricsCollector.ResolveAddressElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+	}
+
 	if err != nil {
 		return err
 	}
 
-	err = t.dial()
+	if t.configuration.MetricsCollector == nil {
+
+		err = t.dial()
+
+	} else {
+
+		start := time.Now()
+		err = t.dial()
+		t.configuration.MetricsCollector.DialElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+	}
+
 	if err != nil {
 		return err
 	}
@@ -187,7 +216,18 @@ func (t *Telnet) Close() {
 		return
 	}
 
-	err := t.connection.Close()
+	var err error
+
+	if t.configuration.MetricsCollector == nil {
+
+		err = t.connection.Close()
+
+	} else {
+		start := time.Now()
+		err = t.connection.Close()
+		t.configuration.MetricsCollector.CloseElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+	}
+
 	if err != nil {
 		if logh.ErrorEnabled {
 			t.logger.Error().Msg(err.Error())
@@ -201,15 +241,28 @@ func (t *Telnet) Close() {
 	t.connection = nil
 }
 
-// Send - send some command to the server
-func (t *Telnet) Send(command ...[]byte) error {
+// send - send some command to the server
+func (t *Telnet) send(command ...[]byte) error {
 
 	var err error
+	var wrote bool
+
 	for _, c := range command {
 	innerLoop:
 		for i := 0; i < t.configuration.MaxWriteRetries; i++ {
 
-			if !t.writePayload(c) {
+			if t.configuration.MetricsCollector == nil {
+
+				wrote = t.writePayload(c)
+
+			} else {
+
+				start := time.Now()
+				wrote = t.writePayload(c)
+				t.configuration.MetricsCollector.WriteElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+			}
+
+			if !wrote {
 
 				t.Close()
 
@@ -235,8 +288,27 @@ func (t *Telnet) Send(command ...[]byte) error {
 	return err
 }
 
-// Read - reads the payload from the active connection
-func (t *Telnet) Read(endConnInput [][]byte) ([]byte, error) {
+// Send - send some command to the server
+func (t *Telnet) Send(command ...[]byte) error {
+
+	var err error
+
+	if t.configuration.MetricsCollector == nil {
+
+		err = t.send(command...)
+
+	} else {
+
+		start := time.Now()
+		err = t.send(command...)
+		t.configuration.MetricsCollector.SendElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+	}
+
+	return err
+}
+
+// read - reads the payload from the active connection
+func (t *Telnet) read(endConnInput [][]byte) ([]byte, error) {
 
 	err := t.connection.SetReadDeadline(time.Now().Add(t.configuration.MaxReadTimeout))
 	if err != nil {
@@ -280,6 +352,26 @@ mainLoop:
 	}
 
 	return fullBuffer.Bytes(), nil
+}
+
+// Read - reads the payload from the active connection
+func (t *Telnet) Read(endConnInput [][]byte) ([]byte, error) {
+
+	var res []byte
+	var err error
+
+	if t.configuration.MetricsCollector == nil {
+
+		res, err = t.read(endConnInput)
+
+	} else {
+
+		start := time.Now()
+		res, err = t.read(endConnInput)
+		t.configuration.MetricsCollector.ReadElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+	}
+
+	return res, err
 }
 
 // writePayload - writes the payload
@@ -330,17 +422,14 @@ func (t *Telnet) logConnectionError(err error, op operation) {
 	}
 }
 
-// GetAddress - returns this node address
-func (t *Telnet) GetAddress() string {
-	return fmt.Sprintf("%s:%d", t.node.Host, t.node.Port)
+// GetNode - returns this node
+func (t *Telnet) GetNode() Node {
+
+	return t.node
 }
 
-// GetHost - returns this node host
-func (t *Telnet) GetHost() string {
+// GetNodeHost - returns this node host
+func (t *Telnet) GetNodeHost() string {
+
 	return t.node.Host
-}
-
-// GetPort - returns this node port
-func (t *Telnet) GetPort() int {
-	return t.node.Port
 }

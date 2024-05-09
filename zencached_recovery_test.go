@@ -35,6 +35,11 @@ func (ts *zencachedRecoveryTestSuite) SetupSuite() {
 	}
 }
 
+func (ts *zencachedRecoveryTestSuite) SetupTest() {
+
+	ts.instance.Rebalance()
+}
+
 func (ts *zencachedRecoveryTestSuite) TearDownSuite() {
 
 	ts.instance.Shutdown()
@@ -42,11 +47,17 @@ func (ts *zencachedRecoveryTestSuite) TearDownSuite() {
 	terminatePods()
 }
 
-func (ts *zencachedRecoveryTestSuite) loopCommands(exitLoop chan struct{}) {
+func isDisconnectionError(t *testing.T, err error) bool {
 
-	isErrMaxCommandRetriesReached := func(err error) bool {
-		return ts.True(errors.Is(err, zencached.ErrMaxCommandRetriesReached), fmt.Sprintf("only expected error is the max command retries reached, instead: %s", err))
-	}
+	return assert.True(t, errors.Is(err, zencached.ErrMaxReconnectionsReached) ||
+		errors.Is(err, zencached.ErrMemcachedNoResponse) ||
+		errors.Is(err, zencached.ErrNoAvailableConnections) ||
+		errors.Is(err, zencached.ErrNoAvailableNodes),
+		fmt.Sprintf("expected a disconnection error, instead: %s", err),
+	)
+}
+
+func (ts *zencachedRecoveryTestSuite) loopCommands(exitLoop chan struct{}) {
 
 	i := 0
 	for {
@@ -58,17 +69,17 @@ func (ts *zencachedRecoveryTestSuite) loopCommands(exitLoop chan struct{}) {
 			key := []byte(strconv.Itoa(i))
 
 			_, _, err := ts.instance.Get(nil, path, key)
-			if err != nil && !isErrMaxCommandRetriesReached(err) {
+			if err != nil && !isDisconnectionError(ts.T(), err) {
 				return
 			}
 
 			_, err = ts.instance.Set(nil, path, key, key, defaultTTL)
-			if err != nil && !isErrMaxCommandRetriesReached(err) {
+			if err != nil && !isDisconnectionError(ts.T(), err) {
 				return
 			}
 
 			_, err = ts.instance.Delete(nil, path, key)
-			if err != nil && !isErrMaxCommandRetriesReached(err) {
+			if err != nil && !isDisconnectionError(ts.T(), err) {
 				return
 			}
 
@@ -99,10 +110,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceRemovingNode() {
 		return minusTwo, nil
 	}
 
-	err := ts.instance.Rebalance()
-	if !ts.NoError(err, "expected no error after rebalancing") {
-		return
-	}
+	ts.instance.Rebalance()
 
 	after := ts.instance.GetConnectedNodes()
 	ts.ElementsMatch(minusTwo, after, "expected same nodes")
@@ -112,10 +120,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceRemovingNode() {
 		return original, nil
 	}
 
-	err = ts.instance.Rebalance()
-	if !ts.NoError(err, "expected no error after rebalancing") {
-		return
-	}
+	ts.instance.Rebalance()
 
 	after = ts.instance.GetConnectedNodes()
 	ts.ElementsMatch(original, after, "expected same nodes")
@@ -148,10 +153,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceAddingNode() {
 		return newNodeConf, nil
 	}
 
-	err := ts.instance.Rebalance()
-	if !ts.NoError(err, "expected no error after rebalancing") {
-		return
-	}
+	ts.instance.Rebalance()
 
 	after := ts.instance.GetConnectedNodes()
 	ts.ElementsMatch(newNodeConf, after, "expected same nodes")
@@ -161,10 +163,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceAddingNode() {
 		return original, nil
 	}
 
-	err = ts.instance.Rebalance()
-	if !ts.NoError(err, "expected no error after rebalancing") {
-		return
-	}
+	ts.instance.Rebalance()
 
 	after = ts.instance.GetConnectedNodes()
 	ts.ElementsMatch(original, after, "expected same nodes")
@@ -188,22 +187,22 @@ func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 	}
 
 	_, _, err = ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
-	if !ts.True(errors.Is(err, zencached.ErrMaxCommandRetriesReached), fmt.Sprintf("expected an error describing max command retries, instead: %v", err)) {
+	if !isDisconnectionError(ts.T(), err) {
 		return
 	}
+
+	// the last get will trigger a rebalance
+	<-time.After(time.Second)
 
 	_, err = dockerh.CreateMemcached(memcachedPodNames[1], memcachedPodPort[1], 64)
 	if !ts.NoError(err, "expected no error creating the memcached pod") {
 		return
 	}
 
-	err = ts.instance.Rebalance()
-	if !ts.NoError(err, "expected no error rebalancing nodes") {
-		return
-	}
+	ts.instance.Rebalance()
 
 	_, _, err = ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
-	if !ts.NoError(err, "expected no error executing get in node zero after it gets back") {
+	if !ts.NoError(err, fmt.Sprintf("expected no error executing get in node zero after it gets back: %s", err)) {
 		return
 	}
 }
@@ -219,28 +218,22 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 	terminatePods()
 
 	_, _, err = ts.instance.Get(nil, []byte("p"), []byte("k"))
-	if !ts.True(errors.Is(err, zencached.ErrMaxCommandRetriesReached), "expected an error describing max command retries") {
+	if !isDisconnectionError(ts.T(), err) {
 		return
 	}
 
-	err = ts.instance.Rebalance()
-	if !ts.NoError(err, "expected no error rebalancing nodes") {
-		return
-	}
+	ts.instance.Rebalance()
 
 	for i := 0; i < 100; i++ {
 		_, _, err = ts.instance.Get(nil, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
-		if !ts.True(errors.Is(err, zencached.ErrNoAvailableNodes), "expected an error describing that there are no nodes available") {
+		if !isDisconnectionError(ts.T(), err) {
 			return
 		}
 	}
 
 	startMemcachedCluster()
 
-	err = ts.instance.Rebalance()
-	if !ts.NoError(err, "expected no error rebalancing nodes") {
-		return
-	}
+	ts.instance.Rebalance()
 
 	for i := 0; i < 100; i++ {
 		_, _, err = ts.instance.Get(nil, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
@@ -273,7 +266,7 @@ func TestMaxConnectionRetryError(t *testing.T) {
 	dockerh.Remove(newPodName)
 
 	_, _, err = instance.Get(nil, []byte("p"), []byte("k"))
-	if !assert.True(t, errors.Is(err, zencached.ErrMaxCommandRetriesReached), "expected max command retries reached error") {
+	if !isDisconnectionError(t, err) {
 		return
 	}
 

@@ -1,6 +1,7 @@
 package zencached_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/rnojiri/dockerh"
@@ -22,6 +23,12 @@ type metricsCollector struct {
 	numCommandExecutionError          int
 	numCacheMissEvent                 int
 	numCacheHitEvent                  int
+	numNodeRebalanceEvent             int
+	numNodeListingEvent               int
+	numNodeRebalanceError             int
+	numNodeListingError               int
+	numNodeListingElapsedTime         int
+	numNodeRebalanceElapsedTime       int
 }
 
 // NodeDistributionEvent - signalizes a node distribution event
@@ -65,6 +72,36 @@ func (mc *metricsCollector) CommandExecutionError(node string, operation, path, 
 	mc.numCommandExecutionError++
 }
 
+func (mc *metricsCollector) NodeRebalanceEvent(numNodes int) {
+
+	mc.numNodeRebalanceEvent++
+}
+
+func (mc *metricsCollector) NodeListingEvent(numNodes int) {
+
+	mc.numNodeListingEvent++
+}
+
+func (mc *metricsCollector) NodeRebalanceError() {
+
+	mc.numNodeRebalanceError++
+}
+
+func (mc *metricsCollector) NodeListingError() {
+
+	mc.numNodeListingError++
+}
+
+func (mc *metricsCollector) NodeListingElapsedTime(elapsedTime int64) {
+
+	mc.numNodeListingElapsedTime++
+}
+
+func (mc *metricsCollector) NodeRebalanceElapsedTime(elapsedTime int64) {
+
+	mc.numNodeRebalanceElapsedTime++
+}
+
 func (mc *metricsCollector) zero() {
 
 	mc.numNodeDistributionEvent = 0
@@ -74,12 +111,20 @@ func (mc *metricsCollector) zero() {
 	mc.numCacheMissEvent = 0
 	mc.numCacheHitEvent = 0
 	mc.numCommandExecutionError = 0
+	mc.numNodeRebalanceEvent = 0
+	mc.numNodeListingEvent = 0
+	mc.numNodeRebalanceError = 0
+	mc.numNodeListingError = 0
+	mc.numNodeListingElapsedTime = 0
+	mc.numNodeRebalanceElapsedTime = 0
 }
 
 type zencachedMetricsTestSuite struct {
 	suite.Suite
-	instance *zencached.Zencached
-	metrics  *metricsCollector
+	instance      *zencached.Zencached
+	config        *zencached.Configuration
+	metrics       *metricsCollector
+	memcachedHost string
 }
 
 func (ts *zencachedMetricsTestSuite) SetupSuite() {
@@ -88,14 +133,15 @@ func (ts *zencachedMetricsTestSuite) SetupSuite() {
 
 	terminatePods()
 
-	host, err := dockerh.CreateMemcached(memcachedMetricsPodName, memcachedMetricsPodPort, 64)
+	var err error
+	ts.memcachedHost, err = dockerh.CreateMemcached(memcachedMetricsPodName, memcachedMetricsPodPort, 64)
 	if err != nil {
 		ts.T().Fatalf("expected no errors creating memcached metrics pod: %v", err)
 	}
 
 	ts.metrics = &metricsCollector{}
 
-	ts.instance, _, err = createZencached([]zencached.Node{{Host: host, Port: memcachedMetricsPodPort}}, false, ts.metrics)
+	ts.instance, ts.config, err = createZencached([]zencached.Node{{Host: ts.memcachedHost, Port: memcachedMetricsPodPort}}, false, ts.metrics)
 	if err != nil {
 		ts.T().Fatalf("expected no errors creating zencached: %v", err)
 	}
@@ -152,7 +198,7 @@ func (ts *zencachedMetricsTestSuite) TestCacheHitEvents() {
 }
 
 // TestZCacheHitEvents - executes last because of the 'Z'
-func (ts *zencachedMetricsTestSuite) TestZCommandExecutionError() {
+func (ts *zencachedMetricsTestSuite) TestZ1CommandExecutionError() {
 
 	err := dockerh.Remove(memcachedMetricsPodName)
 	if !ts.NoError(err, "expected no errors removing memcached metrics pod: %v", err) {
@@ -164,7 +210,60 @@ func (ts *zencachedMetricsTestSuite) TestZCommandExecutionError() {
 	ts.instance.ClusterGet([]byte("path1"), []byte("key1"))
 	ts.instance.Delete(nil, []byte("path1"), []byte("key1"))
 
-	ts.Equal(8, ts.metrics.numCommandExecutionError, "expects four command execution error events")
+	ts.Equal(4, ts.metrics.numCommandExecutionError, "expects four command execution error events")
+}
+
+func (ts *zencachedMetricsTestSuite) TestZ2RebalanceMetrics() {
+
+	ts.instance.Rebalance()
+
+	ts.Equal(1, ts.metrics.numNodeRebalanceEvent, "expected a rebalance event")
+	ts.Equal(1, ts.metrics.numNodeRebalanceElapsedTime, "expected a rebalance elapsed time event")
+	ts.Equal(1, ts.metrics.numNodeListingEvent, "expected a node listing event")
+	ts.Equal(1, ts.metrics.numNodeListingElapsedTime, "expected a node listing elapsed time event")
+	ts.Equal(0, ts.metrics.numNodeRebalanceError, "expected no rebalance errors")
+	ts.Equal(0, ts.metrics.numNodeListingError, "expected no node listing errors")
+}
+
+func (ts *zencachedMetricsTestSuite) TestZ3RebalanceMetricsError() {
+
+	ts.config.NodeListFunction = func() ([]zencached.Node, error) {
+		return []zencached.Node{
+			{
+				Host: ts.memcachedHost,
+				Port: memcachedMetricsPodPort,
+			},
+			{
+				Host: "127.0.0.1",
+				Port: 12345,
+			},
+		}, nil
+	}
+
+	ts.instance.Rebalance()
+
+	ts.Equal(1, ts.metrics.numNodeRebalanceEvent, "expected a rebalance event")
+	ts.Equal(1, ts.metrics.numNodeRebalanceElapsedTime, "expected a rebalance elapsed time event")
+	ts.Equal(1, ts.metrics.numNodeListingEvent, "expected a node listing event")
+	ts.Equal(1, ts.metrics.numNodeListingElapsedTime, "expected a node listing elapsed time event")
+	ts.Equal(6, ts.metrics.numNodeRebalanceError, "expected a rebalance error")
+	ts.Equal(0, ts.metrics.numNodeListingError, "expected no node listing errors")
+}
+
+func (ts *zencachedMetricsTestSuite) TestZ4NodeListingErrorMetricsError() {
+
+	ts.config.NodeListFunction = func() ([]zencached.Node, error) {
+		return nil, errors.New("some error")
+	}
+
+	ts.instance.Rebalance()
+
+	ts.Equal(1, ts.metrics.numNodeRebalanceEvent, "expected a rebalance event")
+	ts.Equal(1, ts.metrics.numNodeRebalanceElapsedTime, "expected a rebalance elapsed time event")
+	ts.Equal(1, ts.metrics.numNodeListingEvent, "expected a node listing event")
+	ts.Equal(1, ts.metrics.numNodeListingElapsedTime, "expected a node listing elapsed time event")
+	ts.Equal(0, ts.metrics.numNodeRebalanceError, "expected a rebalance error")
+	ts.Equal(1, ts.metrics.numNodeListingError, "expected no node listing errors")
 }
 
 func TestZencachedMetricsSuite(t *testing.T) {

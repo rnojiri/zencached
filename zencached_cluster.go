@@ -33,7 +33,7 @@ func (z *Zencached) clusterStore(cmd MemcachedCommand, path, key, value []byte, 
 
 		defer z.ReturnTelnetConnection(telnetConn, i)
 
-		stored[i], errors[i] = z.baseStore(telnetConn, cmd, cmd, path, key, value, ttl)
+		stored[i], errors[i] = z.baseStore(telnetConn, cmd, path, key, value, ttl)
 	}
 
 	return stored, errors

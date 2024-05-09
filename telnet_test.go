@@ -86,15 +86,66 @@ func terminatePods() {
 	}
 }
 
+type telnetMetricsCollector struct {
+	numResolveAddressElapsedTime int
+	numDialElapsedTime           int
+	numCloseElapsedTime          int
+	numSendElapsedTime           int
+	numWriteElapsedTime          int
+	numReadElapsedTime           int
+}
+
+func (tmc *telnetMetricsCollector) ResolveAddressElapsedTime(node string, elapsedTime int64) {
+
+	tmc.numResolveAddressElapsedTime++
+}
+
+func (tmc *telnetMetricsCollector) DialElapsedTime(node string, elapsedTime int64) {
+
+	tmc.numDialElapsedTime++
+}
+
+func (tmc *telnetMetricsCollector) CloseElapsedTime(node string, elapsedTime int64) {
+
+	tmc.numCloseElapsedTime++
+}
+
+func (tmc *telnetMetricsCollector) SendElapsedTime(node string, elapsedTime int64) {
+
+	tmc.numSendElapsedTime++
+}
+
+func (tmc *telnetMetricsCollector) WriteElapsedTime(node string, elapsedTime int64) {
+
+	tmc.numWriteElapsedTime++
+}
+
+func (tmc *telnetMetricsCollector) ReadElapsedTime(node string, elapsedTime int64) {
+
+	tmc.numReadElapsedTime++
+}
+
+func (tmc *telnetMetricsCollector) reset() {
+
+	tmc.numResolveAddressElapsedTime = 0
+	tmc.numDialElapsedTime = 0
+	tmc.numCloseElapsedTime = 0
+	tmc.numSendElapsedTime = 0
+	tmc.numWriteElapsedTime = 0
+	tmc.numReadElapsedTime = 0
+}
+
 type telnetTestSuite struct {
 	suite.Suite
-	telnet *zencached.Telnet
+	telnet           *zencached.Telnet
+	enableMetrics    bool
+	metricsCollector *telnetMetricsCollector
 }
 
 // createTelnetConf - creates a new telnet configuration
-func createTelnetConf() *zencached.TelnetConfiguration {
+func createTelnetConf(metricsCollector *telnetMetricsCollector) *zencached.TelnetConfiguration {
 
-	return &zencached.TelnetConfiguration{
+	tc := &zencached.TelnetConfiguration{
 		ReconnectionTimeout:   time.Second,
 		MaxWriteTimeout:       time.Second,
 		MaxReadTimeout:        time.Second,
@@ -102,6 +153,12 @@ func createTelnetConf() *zencached.TelnetConfiguration {
 		MaxWriteRetries:       3,
 		ReadBufferSize:        2048,
 	}
+
+	if metricsCollector != nil {
+		tc.MetricsCollector = metricsCollector
+	}
+
+	return tc
 }
 
 func (ts *telnetTestSuite) SetupSuite() {
@@ -112,10 +169,21 @@ func (ts *telnetTestSuite) SetupSuite() {
 
 	nodes := startMemcachedCluster()
 
+	if ts.enableMetrics {
+		ts.metricsCollector = &telnetMetricsCollector{}
+	}
+
 	var err error
-	ts.telnet, err = zencached.NewTelnet(nodes[rand.Intn(len(nodes))], *createTelnetConf())
+	ts.telnet, err = zencached.NewTelnet(nodes[rand.Intn(len(nodes))], *createTelnetConf(ts.metricsCollector))
 	if err != nil {
 		ts.T().Fatal(err)
+	}
+}
+
+func (ts *telnetTestSuite) TearDownTest() {
+
+	if ts.enableMetrics {
+		ts.metricsCollector.reset()
 	}
 }
 
@@ -135,6 +203,12 @@ func (ts *telnetTestSuite) TestConnectionOpenClose() {
 	}
 
 	ts.telnet.Close()
+
+	if ts.enableMetrics {
+		ts.Equal(1, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
+		ts.Equal(1, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
+		ts.Equal(1, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
+	}
 }
 
 // TestInfoCommand - tests a simple info command
@@ -144,8 +218,6 @@ func (ts *telnetTestSuite) TestInfoCommand() {
 	if !ts.NoError(err, "error connecting") {
 		return
 	}
-
-	defer ts.telnet.Close()
 
 	err = ts.telnet.Send([]byte("stats\r\n"))
 	if !ts.NoError(err, "error sending command") {
@@ -158,6 +230,17 @@ func (ts *telnetTestSuite) TestInfoCommand() {
 	}
 
 	ts.True(regexp.MustCompile(`STAT version [0-9\\.]+`).MatchString(string(payload)), "version not found")
+
+	ts.telnet.Close()
+
+	if ts.enableMetrics {
+		ts.Equal(1, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
+		ts.Equal(1, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
+		ts.Equal(1, ts.metricsCollector.numSendElapsedTime, "expected a send event")
+		ts.Equal(1, ts.metricsCollector.numWriteElapsedTime, "expected a write event")
+		ts.Equal(1, ts.metricsCollector.numReadElapsedTime, "expected a read event")
+		ts.Equal(1, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
+	}
 }
 
 // TestInsertCommand - tests a simple insert command
@@ -167,8 +250,6 @@ func (ts *telnetTestSuite) TestInsertCommand() {
 	if !ts.NoError(err, "error connecting") {
 		return
 	}
-
-	defer ts.telnet.Close()
 
 	err = ts.telnet.Send([]byte("add gotest 0 10 4\r\ntest\r\n"))
 	if !ts.NoError(err, "error sending set command") {
@@ -193,9 +274,29 @@ func (ts *telnetTestSuite) TestInsertCommand() {
 	}
 
 	ts.True(bytes.Contains(payload, []byte("test")), "expected \"test\" to be stored")
+
+	ts.telnet.Close()
+
+	if ts.enableMetrics {
+		ts.Equal(1, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
+		ts.Equal(1, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
+		ts.Equal(2, ts.metricsCollector.numSendElapsedTime, "expected a send event")
+		ts.Equal(2, ts.metricsCollector.numWriteElapsedTime, "expected a write event")
+		ts.Equal(2, ts.metricsCollector.numReadElapsedTime, "expected a read event")
+		ts.Equal(1, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
+	}
 }
 
 func TestTelnetSuite(t *testing.T) {
 
 	suite.Run(t, new(telnetTestSuite))
+}
+
+func TestTelnetWithMetricsSuite(t *testing.T) {
+
+	suite.Run(t,
+		&telnetTestSuite{
+			enableMetrics: true,
+		},
+	)
 }
