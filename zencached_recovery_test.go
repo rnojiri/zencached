@@ -29,7 +29,7 @@ func (ts *zencachedRecoveryTestSuite) SetupSuite() {
 	nodes := startMemcachedCluster()
 
 	var err error
-	ts.instance, ts.config, err = createZencached(nodes, true, nil)
+	ts.instance, ts.config, err = createZencached(nodes, true, nil, nil)
 	if err != nil {
 		ts.T().Fatalf("expected no errors creating zencached: %v", err)
 	}
@@ -251,7 +251,7 @@ func TestMaxConnectionRetryError(t *testing.T) {
 
 	newPodName, newNode := createExtraMemcachedPod(t)
 
-	instance, _, err := createZencached([]zencached.Node{newNode}, false, nil)
+	instance, _, err := createZencached([]zencached.Node{newNode}, false, nil, nil)
 	if err != nil {
 		t.Fatalf("expected no errors creating zencached: %v", err)
 	}

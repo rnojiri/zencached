@@ -31,8 +31,8 @@ type Configuration struct {
 	// RebalanceOnDisconnection - always rebalance aafter some disconnection
 	RebalanceOnDisconnection bool
 
-	// MetricsCollector - a metrics interface to implement metric extraction
-	MetricsCollector ZencachedMetricsCollector
+	// ZencachedMetricsCollector - a metrics interface to implement metric extraction
+	ZencachedMetricsCollector ZencachedMetricsCollector
 
 	// NodeListFunction - a custom node listing function that can be customizable
 	NodeListFunction GetNodeList
@@ -108,8 +108,8 @@ func (z *Zencached) tryListNodes() []Node {
 		nodes, err := z.configuration.NodeListFunction()
 		if err != nil {
 
-			if z.configuration.MetricsCollector != nil {
-				z.configuration.MetricsCollector.NodeListingError()
+			if z.configuration.ZencachedMetricsCollector != nil {
+				z.configuration.ZencachedMetricsCollector.NodeListingError()
 			}
 
 			if logh.ErrorEnabled {
@@ -153,7 +153,7 @@ func (z *Zencached) rebalance() {
 
 	var nodes []Node
 
-	if z.configuration.MetricsCollector == nil {
+	if z.configuration.ZencachedMetricsCollector == nil {
 
 		nodes = z.tryListNodes()
 
@@ -161,8 +161,8 @@ func (z *Zencached) rebalance() {
 
 		start := time.Now()
 		nodes = z.tryListNodes()
-		z.configuration.MetricsCollector.NodeListingElapsedTime(time.Since(start).Nanoseconds())
-		z.configuration.MetricsCollector.NodeListingEvent(len(nodes))
+		z.configuration.ZencachedMetricsCollector.NodeListingElapsedTime(time.Since(start).Nanoseconds())
+		z.configuration.ZencachedMetricsCollector.NodeListingEvent(len(nodes))
 	}
 
 	nodeTelnetConns := make([]*nodeWorkers, 0)
@@ -244,15 +244,15 @@ func (z *Zencached) rebalance() {
 // Rebalance - rebalance all nodes
 func (z *Zencached) Rebalance() {
 
-	if z.configuration.MetricsCollector == nil {
+	if z.configuration.ZencachedMetricsCollector == nil {
 		z.rebalance()
 		return
 	}
 
 	start := time.Now()
 	z.rebalance()
-	z.configuration.MetricsCollector.NodeRebalanceElapsedTime(time.Since(start).Nanoseconds())
-	z.configuration.MetricsCollector.NodeRebalanceEvent(len(z.connectedNodes))
+	z.configuration.ZencachedMetricsCollector.NodeRebalanceElapsedTime(time.Since(start).Nanoseconds())
+	z.configuration.ZencachedMetricsCollector.NodeRebalanceEvent(len(z.connectedNodes))
 }
 
 func (z *Zencached) rebalanceWorker() {

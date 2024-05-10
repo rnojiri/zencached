@@ -143,7 +143,7 @@ type telnetTestSuite struct {
 }
 
 // createTelnetConf - creates a new telnet configuration
-func createTelnetConf(metricsCollector *telnetMetricsCollector) *zencached.TelnetConfiguration {
+func createTelnetConf(metricsCollector zencached.TelnetMetricsCollector) *zencached.TelnetConfiguration {
 
 	tc := &zencached.TelnetConfiguration{
 		ReconnectionTimeout:   time.Second,
@@ -155,7 +155,7 @@ func createTelnetConf(metricsCollector *telnetMetricsCollector) *zencached.Telne
 	}
 
 	if metricsCollector != nil {
-		tc.MetricsCollector = metricsCollector
+		tc.TelnetMetricsCollector = metricsCollector
 	}
 
 	return tc
