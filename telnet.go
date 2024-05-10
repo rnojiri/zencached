@@ -60,8 +60,8 @@ type TelnetConfiguration struct {
 	// ReadBufferSize - the size of the read buffer in bytes
 	ReadBufferSize int
 
-	// MetricsCollector - collects metrics related with telnet
-	MetricsCollector TelnetMetricsCollector
+	// TelnetMetricsCollector - collects metrics related with telnet
+	TelnetMetricsCollector TelnetMetricsCollector
 }
 
 func (tc *TelnetConfiguration) setDefaults() {
@@ -121,7 +121,7 @@ func NewTelnet(node Node, configuration TelnetConfiguration) (*Telnet, error) {
 // resolveServerAddress - configures the server address
 func (t *Telnet) resolveServerAddress() (string, error) {
 
-	hostPort := fmt.Sprintf("%s:%d", t.node.Host, t.node.Port)
+	hostPort := t.node.String()
 
 	if logh.DebugEnabled {
 		t.logger.Debug().Msgf("resolving address: %s", hostPort)
@@ -149,7 +149,7 @@ func (t *Telnet) Connect() error {
 	var hostPort string
 	var err error
 
-	if t.configuration.MetricsCollector == nil {
+	if t.configuration.TelnetMetricsCollector == nil {
 
 		hostPort, err = t.resolveServerAddress()
 
@@ -157,14 +157,14 @@ func (t *Telnet) Connect() error {
 
 		start := time.Now()
 		hostPort, err = t.resolveServerAddress()
-		t.configuration.MetricsCollector.ResolveAddressElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+		t.configuration.TelnetMetricsCollector.ResolveAddressElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
 	}
 
 	if err != nil {
 		return err
 	}
 
-	if t.configuration.MetricsCollector == nil {
+	if t.configuration.TelnetMetricsCollector == nil {
 
 		err = t.dial()
 
@@ -172,7 +172,7 @@ func (t *Telnet) Connect() error {
 
 		start := time.Now()
 		err = t.dial()
-		t.configuration.MetricsCollector.DialElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+		t.configuration.TelnetMetricsCollector.DialElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
 	}
 
 	if err != nil {
@@ -218,14 +218,14 @@ func (t *Telnet) Close() {
 
 	var err error
 
-	if t.configuration.MetricsCollector == nil {
+	if t.configuration.TelnetMetricsCollector == nil {
 
 		err = t.connection.Close()
 
 	} else {
 		start := time.Now()
 		err = t.connection.Close()
-		t.configuration.MetricsCollector.CloseElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+		t.configuration.TelnetMetricsCollector.CloseElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
 	}
 
 	if err != nil {
@@ -251,7 +251,7 @@ func (t *Telnet) send(command ...[]byte) error {
 	innerLoop:
 		for i := 0; i < t.configuration.MaxWriteRetries; i++ {
 
-			if t.configuration.MetricsCollector == nil {
+			if t.configuration.TelnetMetricsCollector == nil {
 
 				wrote = t.writePayload(c)
 
@@ -259,7 +259,7 @@ func (t *Telnet) send(command ...[]byte) error {
 
 				start := time.Now()
 				wrote = t.writePayload(c)
-				t.configuration.MetricsCollector.WriteElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+				t.configuration.TelnetMetricsCollector.WriteElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
 			}
 
 			if !wrote {
@@ -293,7 +293,7 @@ func (t *Telnet) Send(command ...[]byte) error {
 
 	var err error
 
-	if t.configuration.MetricsCollector == nil {
+	if t.configuration.TelnetMetricsCollector == nil {
 
 		err = t.send(command...)
 
@@ -301,7 +301,7 @@ func (t *Telnet) Send(command ...[]byte) error {
 
 		start := time.Now()
 		err = t.send(command...)
-		t.configuration.MetricsCollector.SendElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+		t.configuration.TelnetMetricsCollector.SendElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
 	}
 
 	return err
@@ -360,7 +360,7 @@ func (t *Telnet) Read(endConnInput [][]byte) ([]byte, error) {
 	var res []byte
 	var err error
 
-	if t.configuration.MetricsCollector == nil {
+	if t.configuration.TelnetMetricsCollector == nil {
 
 		res, err = t.read(endConnInput)
 
@@ -368,7 +368,7 @@ func (t *Telnet) Read(endConnInput [][]byte) ([]byte, error) {
 
 		start := time.Now()
 		res, err = t.read(endConnInput)
-		t.configuration.MetricsCollector.ReadElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+		t.configuration.TelnetMetricsCollector.ReadElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
 	}
 
 	return res, err

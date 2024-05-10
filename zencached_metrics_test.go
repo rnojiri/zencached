@@ -82,7 +82,7 @@ func (mc *metricsCollector) NodeRebalanceElapsedTime(elapsedTime int64) {
 	mc.numNodeRebalanceElapsedTime++
 }
 
-func (mc *metricsCollector) zero() {
+func (mc *metricsCollector) reset() {
 
 	mc.numCommandExecutionElapsedTime = 0
 	mc.numCommandExecution = 0
@@ -101,6 +101,7 @@ type zencachedMetricsTestSuite struct {
 	instance      *zencached.Zencached
 	config        *zencached.Configuration
 	metrics       *metricsCollector
+	telnetMetrics *telnetMetricsCollector
 	memcachedHost string
 }
 
@@ -117,8 +118,13 @@ func (ts *zencachedMetricsTestSuite) SetupSuite() {
 	}
 
 	ts.metrics = &metricsCollector{}
+	ts.telnetMetrics = &telnetMetricsCollector{}
 
-	ts.instance, ts.config, err = createZencached([]zencached.Node{{Host: ts.memcachedHost, Port: memcachedMetricsPodPort}}, false, ts.metrics)
+	ts.instance, ts.config, err = createZencached(
+		[]zencached.Node{{Host: ts.memcachedHost, Port: memcachedMetricsPodPort}},
+		false,
+		ts.metrics, ts.telnetMetrics,
+	)
 	if err != nil {
 		ts.T().Fatalf("expected no errors creating zencached: %v", err)
 	}
@@ -126,7 +132,8 @@ func (ts *zencachedMetricsTestSuite) SetupSuite() {
 
 func (ts *zencachedMetricsTestSuite) SetupTest() {
 
-	ts.metrics.zero()
+	ts.metrics.reset()
+	ts.telnetMetrics.reset()
 }
 
 func (ts *zencachedMetricsTestSuite) TearDownSuite() {
@@ -145,6 +152,12 @@ func (ts *zencachedMetricsTestSuite) TestCommandExecutionEvents() {
 
 	ts.Equal(4, ts.metrics.numCommandExecution, "expects four command execution events")
 	ts.Equal(4, ts.metrics.numCommandExecutionElapsedTime, "expects four command execution time measurements")
+	ts.Equal(0, ts.telnetMetrics.numResolveAddressElapsedTime, "expected a resolve address event")
+	ts.Equal(0, ts.telnetMetrics.numDialElapsedTime, "expected a dial event")
+	ts.Equal(4, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
+	ts.Equal(4, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
+	ts.Equal(4, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
+	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
 }
 
 func (ts *zencachedMetricsTestSuite) TestCacheMissEvents() {
@@ -154,6 +167,10 @@ func (ts *zencachedMetricsTestSuite) TestCacheMissEvents() {
 	ts.instance.ClusterGet([]byte("path3"), []byte("key3"))
 
 	ts.Equal(3, ts.metrics.numCacheMissEvent, "expects three cache miss events")
+	ts.Equal(3, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
+	ts.Equal(3, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
+	ts.Equal(3, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
+	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
 }
 
 func (ts *zencachedMetricsTestSuite) TestCacheHitEvents() {
@@ -164,6 +181,10 @@ func (ts *zencachedMetricsTestSuite) TestCacheHitEvents() {
 	ts.instance.Delete(nil, []byte("path1"), []byte("key1"))
 
 	ts.Equal(3, ts.metrics.numCacheHitEvent, "expects two cache hit events")
+	ts.Equal(4, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
+	ts.Equal(4, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
+	ts.Equal(4, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
+	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
 }
 
 // TestZCacheHitEvents - executes last because of the 'Z'
@@ -180,6 +201,10 @@ func (ts *zencachedMetricsTestSuite) TestZ1CommandExecutionError() {
 	ts.instance.Delete(nil, []byte("path1"), []byte("key1"))
 
 	ts.Equal(4, ts.metrics.numCommandExecutionError, "expects four command execution error events")
+	ts.Equal(4, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
+	ts.Equal(4, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
+	ts.Equal(4, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
+	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
 }
 
 func (ts *zencachedMetricsTestSuite) TestZ2RebalanceMetrics() {
@@ -191,6 +216,10 @@ func (ts *zencachedMetricsTestSuite) TestZ2RebalanceMetrics() {
 	ts.Equal(1, ts.metrics.numNodeListingEvent, "expected a node listing event")
 	ts.Equal(1, ts.metrics.numNodeListingElapsedTime, "expected a node listing elapsed time event")
 	ts.Equal(0, ts.metrics.numNodeListingError, "expected no node listing errors")
+	ts.Equal(0, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
+	ts.Equal(0, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
+	ts.Equal(0, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
+	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
 }
 
 func (ts *zencachedMetricsTestSuite) TestZ3RebalanceMetricsError() {
@@ -215,6 +244,10 @@ func (ts *zencachedMetricsTestSuite) TestZ3RebalanceMetricsError() {
 	ts.Equal(1, ts.metrics.numNodeListingEvent, "expected a node listing event")
 	ts.Equal(1, ts.metrics.numNodeListingElapsedTime, "expected a node listing elapsed time event")
 	ts.Equal(0, ts.metrics.numNodeListingError, "expected no node listing errors")
+	ts.Equal(0, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
+	ts.Equal(0, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
+	ts.Equal(0, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
+	ts.GreaterOrEqual(ts.telnetMetrics.numCloseElapsedTime, 1, "expected at least one close event")
 }
 
 func (ts *zencachedMetricsTestSuite) TestZ4NodeListingErrorMetricsError() {
@@ -230,6 +263,10 @@ func (ts *zencachedMetricsTestSuite) TestZ4NodeListingErrorMetricsError() {
 	ts.Equal(1, ts.metrics.numNodeListingEvent, "expected a node listing event")
 	ts.Equal(1, ts.metrics.numNodeListingElapsedTime, "expected a node listing elapsed time event")
 	ts.Equal(1, ts.metrics.numNodeListingError, "expected no node listing errors")
+	ts.Equal(0, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
+	ts.Equal(0, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
+	ts.Equal(0, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
+	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
 }
 
 func TestZencachedMetricsSuite(t *testing.T) {

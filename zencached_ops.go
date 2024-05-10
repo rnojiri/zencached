@@ -117,7 +117,7 @@ func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 
 	var result cmdResponse
 
-	if z.configuration.MetricsCollector == nil {
+	if z.configuration.ZencachedMetricsCollector == nil {
 
 		nw.jobs <- job
 		result = <-job.response
@@ -129,23 +129,23 @@ func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 		nw.jobs <- job
 		result = <-job.response
 
-		nw.configuration.MetricsCollector.CommandExecutionElapsedTime(
+		nw.configuration.ZencachedMetricsCollector.CommandExecutionElapsedTime(
 			nw.node.Host,
 			job.cmd, job.path, job.key,
 			time.Since(start).Nanoseconds(),
 		)
 
-		nw.configuration.MetricsCollector.CommandExecution(nw.node.Host, job.cmd, job.path, job.key)
+		nw.configuration.ZencachedMetricsCollector.CommandExecution(nw.node.Host, job.cmd, job.path, job.key)
 
 		if result.exists && !job.forceCacheMissMetric {
-			nw.configuration.MetricsCollector.CacheHitEvent(nw.node.Host, job.cmd, job.path, job.key)
+			nw.configuration.ZencachedMetricsCollector.CacheHitEvent(nw.node.Host, job.cmd, job.path, job.key)
 		} else {
-			nw.configuration.MetricsCollector.CacheMissEvent(nw.node.Host, job.cmd, job.path, job.key)
+			nw.configuration.ZencachedMetricsCollector.CacheMissEvent(nw.node.Host, job.cmd, job.path, job.key)
 		}
 
 		if result.err != nil {
 
-			nw.configuration.MetricsCollector.CommandExecutionError(
+			nw.configuration.ZencachedMetricsCollector.CommandExecutionError(
 				nw.node.Host,
 				job.cmd, job.path, job.key,
 				result.err,
