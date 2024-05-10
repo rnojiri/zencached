@@ -40,12 +40,6 @@ type Configuration struct {
 	// NodeListRetryTimeout - time to wait for node listing retry after an error
 	NodeListRetryTimeout time.Duration
 
-	// MaxWaitForConnection - the max time duration to wait for a free telnet connection
-	MaxWaitForConnection time.Duration
-
-	// WaitTimeForConnection - the time duration to check for a free telnet connection
-	WaitTimeForConnection time.Duration
-
 	TelnetConfiguration
 }
 
@@ -69,14 +63,6 @@ func (c *Configuration) setDefaults() {
 
 	if c.NodeListRetryTimeout == 0 {
 		c.NodeListRetryTimeout = time.Second
-	}
-
-	if c.MaxWaitForConnection == 0 {
-		c.MaxWaitForConnection = time.Second
-	}
-
-	if c.WaitTimeForConnection == 0 {
-		c.WaitTimeForConnection = 10 * time.Millisecond
 	}
 }
 

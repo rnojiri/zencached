@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strconv"
+	"time"
 )
 
 //
@@ -112,6 +113,49 @@ func (z *Zencached) store(cmd MemcachedCommand, routerHash, path, key, value []b
 	return z.baseStore(nw, cmd, path, key, value, ttl)
 }
 
+func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
+
+	var result cmdResponse
+
+	if z.configuration.MetricsCollector == nil {
+
+		nw.jobs <- job
+		result = <-job.response
+
+	} else {
+
+		start := time.Now()
+
+		nw.jobs <- job
+		result = <-job.response
+
+		nw.configuration.MetricsCollector.CommandExecutionElapsedTime(
+			nw.node.Host,
+			job.cmd, job.path, job.key,
+			time.Since(start).Nanoseconds(),
+		)
+
+		nw.configuration.MetricsCollector.CommandExecution(nw.node.Host, job.cmd, job.path, job.key)
+
+		if result.exists && !job.forceCacheMissMetric {
+			nw.configuration.MetricsCollector.CacheHitEvent(nw.node.Host, job.cmd, job.path, job.key)
+		} else {
+			nw.configuration.MetricsCollector.CacheMissEvent(nw.node.Host, job.cmd, job.path, job.key)
+		}
+
+		if result.err != nil {
+
+			nw.configuration.MetricsCollector.CommandExecutionError(
+				nw.node.Host,
+				job.cmd, job.path, job.key,
+				result.err,
+			)
+		}
+	}
+
+	return result
+}
+
 // baseStore - base storage function
 func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, value []byte, ttl uint64) (bool, error) {
 
@@ -126,8 +170,7 @@ func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, 
 		response:             make(chan cmdResponse),
 	}
 
-	nw.jobs <- job
-	result := <-job.response
+	result := z.addJobAndWait(nw, job)
 
 	return result.exists, result.err
 }
@@ -197,8 +240,7 @@ func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) ([]byte, bool, er
 		response:             make(chan cmdResponse),
 	}
 
-	nw.jobs <- job
-	result := <-job.response
+	result := z.addJobAndWait(nw, job)
 
 	if !result.exists || result.err != nil {
 		return nil, false, result.err
@@ -237,8 +279,7 @@ func (z *Zencached) baseDelete(nw *nodeWorkers, path, key []byte) (bool, error) 
 		response:             make(chan cmdResponse),
 	}
 
-	nw.jobs <- job
-	result := <-job.response
+	result := z.addJobAndWait(nw, job)
 
 	return result.exists, result.err
 }
@@ -297,8 +338,7 @@ func (z *Zencached) baseVersion(nw *nodeWorkers) ([]byte, error) {
 		response:             make(chan cmdResponse),
 	}
 
-	nw.jobs <- job
-	result := <-job.response
+	result := z.addJobAndWait(nw, job)
 
 	if !result.exists || result.err != nil {
 		return nil, result.err

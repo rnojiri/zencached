@@ -52,7 +52,8 @@ func isDisconnectionError(t *testing.T, err error) bool {
 	return assert.True(t, errors.Is(err, zencached.ErrMaxReconnectionsReached) ||
 		errors.Is(err, zencached.ErrMemcachedNoResponse) ||
 		errors.Is(err, zencached.ErrNoAvailableConnections) ||
-		errors.Is(err, zencached.ErrNoAvailableNodes),
+		errors.Is(err, zencached.ErrNoAvailableNodes) ||
+		errors.Is(err, zencached.ErrTelnetConnectionIsClosed),
 		fmt.Sprintf("expected a disconnection error, instead: %s", err),
 	)
 }

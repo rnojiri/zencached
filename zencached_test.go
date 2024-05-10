@@ -55,8 +55,6 @@ func createZencached(nodes []zencached.Node, rebalanceOnDisconnection bool, metr
 		RebalanceOnDisconnection: rebalanceOnDisconnection,
 		NumNodeListRetries:       1,
 		NodeListRetryTimeout:     100 * time.Millisecond,
-		MaxWaitForConnection:     1 * time.Second,
-		WaitTimeForConnection:    100 * time.Microsecond,
 	}
 
 	z, err := zencached.New(c)

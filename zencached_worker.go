@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand"
 	"sync/atomic"
-	"time"
 
 	"github.com/rnojiri/logh"
 )
@@ -68,7 +67,7 @@ func (nw *nodeWorkers) work(telnetConn *Telnet, workerID int) {
 
 	for job := range nw.jobs {
 
-		response := nw.sendAndReadResponseWrapper(telnetConn, job)
+		response := nw.sendAndReadResponse(telnetConn, job.beginResponseSet, job.endResponseSet, job.renderedCmd)
 
 		job.response <- response
 
@@ -186,45 +185,4 @@ func (nw *nodeWorkers) sendAndReadResponse(
 	}
 
 	return cmdResponse{false, nil, err}
-}
-
-func (nw *nodeWorkers) sendAndReadResponseWrapper(telnetConn *Telnet, job cmdJob) (res cmdResponse) {
-
-	if nw.configuration.MetricsCollector == nil {
-
-		res = nw.sendAndReadResponse(telnetConn, job.beginResponseSet, job.endResponseSet, job.renderedCmd)
-
-	} else {
-
-		nw.configuration.MetricsCollector.CommandExecution(telnetConn.GetNodeHost(), job.cmd, job.path, job.key)
-
-		start := time.Now()
-
-		res = nw.sendAndReadResponse(telnetConn, job.beginResponseSet, job.endResponseSet, job.renderedCmd)
-
-		elapsedTime := time.Since(start)
-
-		nw.configuration.MetricsCollector.CommandExecutionElapsedTime(
-			telnetConn.GetNodeHost(),
-			job.cmd, job.path, job.key,
-			elapsedTime.Nanoseconds(),
-		)
-
-		if res.exists && !job.forceCacheMissMetric {
-			nw.configuration.MetricsCollector.CacheHitEvent(telnetConn.GetNodeHost(), job.cmd, job.path, job.key)
-		} else {
-			nw.configuration.MetricsCollector.CacheMissEvent(telnetConn.GetNodeHost(), job.cmd, job.path, job.key)
-		}
-
-		if res.err != nil {
-
-			nw.configuration.MetricsCollector.CommandExecutionError(
-				telnetConn.GetNodeHost(),
-				job.cmd, job.path, job.key,
-				res.err,
-			)
-		}
-	}
-
-	return
 }
