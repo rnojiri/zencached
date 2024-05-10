@@ -41,12 +41,6 @@ var _ IZencached = (*Zencached)(nil)
 // ZencachedMetricsCollector - the interface to collect metrics from zencached
 type ZencachedMetricsCollector interface {
 
-	// NodeDistributionEvent - signalizes a node distribution event
-	NodeDistributionEvent(node string)
-
-	// NodeConnectionAvailabilityTime - the elapsed time waiting for an available connection in nanosecs
-	NodeConnectionAvailabilityTime(node string, elapsedTime int64)
-
 	// CommandExecutionElapsedTime - command execution elapsed time
 	CommandExecutionElapsedTime(node string, operation, path, key []byte, elapsedTime int64)
 
@@ -67,9 +61,6 @@ type ZencachedMetricsCollector interface {
 
 	// NodeListingEvent - signalizes a node listing event
 	NodeListingEvent(numNodes int)
-
-	// NodeRebalanceError - signalizes a node rebalance error
-	NodeRebalanceError()
 
 	// NodeListingError - signalizes a node listing error
 	NodeListingError()

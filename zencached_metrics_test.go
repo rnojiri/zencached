@@ -16,31 +16,16 @@ const (
 )
 
 type metricsCollector struct {
-	numNodeDistributionEvent          int
-	numNodeConnectionAvailabilityTime int
-	numCommandExecutionElapsedTime    int
-	numCommandExecution               int
-	numCommandExecutionError          int
-	numCacheMissEvent                 int
-	numCacheHitEvent                  int
-	numNodeRebalanceEvent             int
-	numNodeListingEvent               int
-	numNodeRebalanceError             int
-	numNodeListingError               int
-	numNodeListingElapsedTime         int
-	numNodeRebalanceElapsedTime       int
-}
-
-// NodeDistributionEvent - signalizes a node distribution event
-func (mc *metricsCollector) NodeDistributionEvent(node string) {
-
-	mc.numNodeDistributionEvent++
-}
-
-// NodeConnectionAvailabilityTime - the elapsed time waiting for an available connection
-func (mc *metricsCollector) NodeConnectionAvailabilityTime(node string, elapsedTime int64) {
-
-	mc.numNodeConnectionAvailabilityTime++
+	numCommandExecutionElapsedTime int
+	numCommandExecution            int
+	numCommandExecutionError       int
+	numCacheMissEvent              int
+	numCacheHitEvent               int
+	numNodeRebalanceEvent          int
+	numNodeListingEvent            int
+	numNodeListingError            int
+	numNodeListingElapsedTime      int
+	numNodeRebalanceElapsedTime    int
 }
 
 // CommandExecutionElapsedTime - command execution elapsed time
@@ -82,11 +67,6 @@ func (mc *metricsCollector) NodeListingEvent(numNodes int) {
 	mc.numNodeListingEvent++
 }
 
-func (mc *metricsCollector) NodeRebalanceError() {
-
-	mc.numNodeRebalanceError++
-}
-
 func (mc *metricsCollector) NodeListingError() {
 
 	mc.numNodeListingError++
@@ -104,8 +84,6 @@ func (mc *metricsCollector) NodeRebalanceElapsedTime(elapsedTime int64) {
 
 func (mc *metricsCollector) zero() {
 
-	mc.numNodeDistributionEvent = 0
-	mc.numNodeConnectionAvailabilityTime = 0
 	mc.numCommandExecutionElapsedTime = 0
 	mc.numCommandExecution = 0
 	mc.numCacheMissEvent = 0
@@ -113,7 +91,6 @@ func (mc *metricsCollector) zero() {
 	mc.numCommandExecutionError = 0
 	mc.numNodeRebalanceEvent = 0
 	mc.numNodeListingEvent = 0
-	mc.numNodeRebalanceError = 0
 	mc.numNodeListingError = 0
 	mc.numNodeListingElapsedTime = 0
 	mc.numNodeRebalanceElapsedTime = 0
@@ -157,14 +134,6 @@ func (ts *zencachedMetricsTestSuite) TearDownSuite() {
 	ts.instance.Shutdown()
 
 	terminatePods()
-}
-
-func (ts *zencachedMetricsTestSuite) TestNodeDistributionEvents() {
-
-	ts.instance.Get(nil, []byte("path1"), []byte("key1"))
-
-	ts.Equal(1, ts.metrics.numNodeDistributionEvent, "expects one node distribution event")
-	ts.Equal(1, ts.metrics.numNodeConnectionAvailabilityTime, "expects one node connection availability time measurement")
 }
 
 func (ts *zencachedMetricsTestSuite) TestCommandExecutionEvents() {
@@ -221,7 +190,6 @@ func (ts *zencachedMetricsTestSuite) TestZ2RebalanceMetrics() {
 	ts.Equal(1, ts.metrics.numNodeRebalanceElapsedTime, "expected a rebalance elapsed time event")
 	ts.Equal(1, ts.metrics.numNodeListingEvent, "expected a node listing event")
 	ts.Equal(1, ts.metrics.numNodeListingElapsedTime, "expected a node listing elapsed time event")
-	ts.Equal(0, ts.metrics.numNodeRebalanceError, "expected no rebalance errors")
 	ts.Equal(0, ts.metrics.numNodeListingError, "expected no node listing errors")
 }
 
@@ -246,7 +214,6 @@ func (ts *zencachedMetricsTestSuite) TestZ3RebalanceMetricsError() {
 	ts.Equal(1, ts.metrics.numNodeRebalanceElapsedTime, "expected a rebalance elapsed time event")
 	ts.Equal(1, ts.metrics.numNodeListingEvent, "expected a node listing event")
 	ts.Equal(1, ts.metrics.numNodeListingElapsedTime, "expected a node listing elapsed time event")
-	ts.Equal(6, ts.metrics.numNodeRebalanceError, "expected a rebalance error")
 	ts.Equal(0, ts.metrics.numNodeListingError, "expected no node listing errors")
 }
 
@@ -262,7 +229,6 @@ func (ts *zencachedMetricsTestSuite) TestZ4NodeListingErrorMetricsError() {
 	ts.Equal(1, ts.metrics.numNodeRebalanceElapsedTime, "expected a rebalance elapsed time event")
 	ts.Equal(1, ts.metrics.numNodeListingEvent, "expected a node listing event")
 	ts.Equal(1, ts.metrics.numNodeListingElapsedTime, "expected a node listing elapsed time event")
-	ts.Equal(0, ts.metrics.numNodeRebalanceError, "expected a rebalance error")
 	ts.Equal(1, ts.metrics.numNodeListingError, "expected no node listing errors")
 }
 

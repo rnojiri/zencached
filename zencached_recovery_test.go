@@ -191,9 +191,6 @@ func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 		return
 	}
 
-	// the last get will trigger a rebalance
-	<-time.After(time.Second)
-
 	_, err = dockerh.CreateMemcached(memcachedPodNames[1], memcachedPodPort[1], 64)
 	if !ts.NoError(err, "expected no error creating the memcached pod") {
 		return

@@ -1,214 +1,228 @@
 package zencached
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/rand"
-	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/rnojiri/logh"
 )
 
-type nodeWorkers struct {
-	connected uint32
-	node      Node
-	channel   chan *Telnet
+type cmdResponse struct {
+	exists   bool
+	response []byte
+	err      error
 }
 
-func (z *Zencached) findAvailableTelnetConnection(channel chan *Telnet) (telnetConn *Telnet, err error) {
+type cmdJob struct {
+	cmd                              MemcachedCommand
+	beginResponseSet, endResponseSet memcachedResponseSet
+	renderedCmd, path, key           []byte
+	forceCacheMissMetric             bool
+	response                         chan cmdResponse
+}
 
-	wc := sync.WaitGroup{}
-	wc.Add(1)
+type nodeWorkers struct {
+	logger           *logh.ContextualLogger
+	connected        uint32
+	node             Node
+	jobs             chan cmdJob
+	rebalanceChannel chan<- struct{}
+	configuration    *Configuration
+}
 
-	go func() {
+// NewTelnetFromNode - creates a new telnet connection based in this node configuration
+func (nw *nodeWorkers) NewTelnetFromNode() (*Telnet, error) {
 
-		start := time.Now()
-		defer wc.Done()
-		var open bool
+	t, err := NewTelnet(nw.node, nw.configuration.TelnetConfiguration)
+	if err != nil {
+		if logh.ErrorEnabled {
+			nw.logger.Error().Str("host", nw.node.Host).Int("port", nw.node.Port).Err(err).Msg("error creating telnet")
+		}
 
-		for {
-			select {
-			case telnetConn, open = <-channel:
-				if !open {
-					if logh.DebugEnabled {
-						z.logger.Debug().Msg("telnet connection channel is closed")
-					}
+		return nil, err
+	}
 
-					err = ErrTelnetConnectionIsClosed
-					telnetConn = nil
-				}
+	err = t.Connect()
+	if err != nil {
+		if logh.ErrorEnabled {
+			nw.logger.Error().Str("host", nw.node.Host).Int("port", nw.node.Port).Err(err).Msg("error connecting to host")
+		}
 
-				return
+		return nil, err
+	}
 
-			default:
-				if time.Since(start) > z.configuration.MaxWaitForConnection {
-					telnetConn = nil
-					err = ErrNoAvailableConnections
-					return
-				}
+	return t, nil
+}
 
-				<-time.After(z.configuration.MaxWaitForConnection)
+// terminate - closes all connections
+func (nw *nodeWorkers) terminate() {
+
+	close(nw.jobs)
+}
+
+func (nw *nodeWorkers) work(telnetConn *Telnet, workerID int) {
+
+	for job := range nw.jobs {
+
+		response := nw.sendAndReadResponseWrapper(telnetConn, job)
+
+		job.response <- response
+
+		if errors.Is(response.err, ErrNoAvailableConnections) ||
+			errors.Is(response.err, ErrMaxReconnectionsReached) ||
+			errors.Is(response.err, ErrMemcachedNoResponse) {
+
+			if nw.configuration.RebalanceOnDisconnection {
+				nw.rebalanceChannel <- struct{}{}
+				break
 			}
 		}
-	}()
+	}
 
-	wc.Wait()
+	atomic.StoreUint32(&nw.connected, 0)
+	telnetConn.Close()
 
-	return
+	if logh.InfoEnabled {
+		nw.logger.Info().Msgf("terminating worker id: %d", workerID)
+	}
 }
 
-func (z *Zencached) getAvailableTelnetConnection(index int) (*Telnet, error) {
+func (z *Zencached) createNodeWorker(node Node, rebalanceChannel chan<- struct{}) (*nodeWorkers, error) {
+
+	nw := &nodeWorkers{
+		logger:           logh.CreateContextualLogger("pkg", "zencached", "node", node.String()),
+		node:             node,
+		connected:        1,
+		jobs:             make(chan cmdJob, z.configuration.CommandExecutionBufferSize),
+		configuration:    z.configuration,
+		rebalanceChannel: rebalanceChannel,
+	}
+
+	for i := 0; i < int(z.configuration.NumConnectionsPerNode); i++ {
+
+		telnetConn, err := nw.NewTelnetFromNode()
+		if err != nil {
+			nw.terminate()
+			return nil, err
+		}
+
+		go nw.work(telnetConn, i)
+	}
+
+	return nw, nil
+}
+
+// GetNodeWorkersByIndex - returns a telnet connection by node index
+func (z *Zencached) GetNodeWorkersByIndex(index int) (nw *nodeWorkers, err error) {
 
 	if atomic.LoadUint32(&z.nodeWorkerArray[index].connected) == 0 {
 		return nil, ErrTelnetConnectionIsClosed
 	}
 
-	return z.findAvailableTelnetConnection(z.nodeWorkerArray[index].channel)
+	return z.nodeWorkerArray[index], nil
 }
 
-// GetTelnetConnByNodeIndex - returns a telnet connection by node index
-func (z *Zencached) GetTelnetConnByNodeIndex(index int) (telnetConn *Telnet, err error) {
-
-	if z.configuration.MetricsCollector == nil {
-
-		telnetConn, err = z.getAvailableTelnetConnection(index)
-
-	} else {
-
-		start := time.Now()
-
-		telnetConn, err = z.getAvailableTelnetConnection(index)
-
-		elapsedTime := time.Since(start)
-
-		z.configuration.MetricsCollector.NodeDistributionEvent(telnetConn.GetNodeHost())
-		z.configuration.MetricsCollector.NodeConnectionAvailabilityTime(telnetConn.GetNodeHost(), elapsedTime.Nanoseconds())
-	}
-
-	return
-}
-
-// GetTelnetConnection - returns an idle telnet connection
-func (z *Zencached) GetTelnetConnection(routerHash, path, key []byte) (telnetConn *Telnet, index int, err error) {
+// GetConnectedNodeWorkers - returns an idle telnet connection
+func (z *Zencached) GetConnectedNodeWorkers(routerHash, path, key []byte) (nw *nodeWorkers, index int, err error) {
 
 	if atomic.LoadUint32(&z.notAvailable) == 1 {
 		return nil, 0, ErrNoAvailableNodes
 	}
 
-	if routerHash == nil {
+	if routerHash == nil && len(path) > 0 && len(key) > 0 {
 		routerHash = append(path, key...)
 	}
 
 	if len(routerHash) == 0 {
-		index = rand.Intn(z.numNodeTelnetConns)
+		index = rand.Intn(len(z.nodeWorkerArray))
 	} else {
-		index = int(routerHash[len(routerHash)-1]) % z.numNodeTelnetConns
+		index = int(routerHash[len(routerHash)-1]) % len(z.nodeWorkerArray)
 	}
 
-	telnetConn, err = z.GetTelnetConnByNodeIndex(index)
+	nw, err = z.GetNodeWorkersByIndex(index)
 
 	return
 }
 
-// ReturnTelnetConnection - returns a telnet connection to the pool
-func (z *Zencached) ReturnTelnetConnection(telnetConn *Telnet, index int) {
+// checkResponse - checks the memcached response
+func (nw *nodeWorkers) checkResponse(
+	telnetConn *Telnet,
+	checkReadSet, checkResponseSet memcachedResponseSet,
+) cmdResponse {
 
-	z.nodeWorkerArray[index].channel <- telnetConn
-}
+	response, err := telnetConn.Read(checkReadSet)
+	if err != nil {
+		return cmdResponse{false, nil, err}
+	}
 
-// extractValue - extracts a value from the response
-func (z *Zencached) extractValue(response []byte) (start, end int, err error) {
+	if len(response) == 0 {
+		return cmdResponse{false, nil, ErrMemcachedNoResponse}
+	}
 
-	start = -1
-	end = -1
-
-	for i := 0; i < len(response); i++ {
-		if start == -1 && response[i] == lineBreaksN {
-			start = i + 1
-		} else if start >= 0 && response[i] == lineBreaksR {
-			end = i
-			break
+	if !bytes.HasPrefix(response, checkResponseSet[0]) {
+		if !bytes.Contains(response, checkResponseSet[1]) {
+			return cmdResponse{false, nil, fmt.Errorf("%w: %s", ErrMemcachedInvalidResponse, string(response))}
 		}
+
+		return cmdResponse{false, response, nil}
 	}
 
-	if start == -1 {
-		err = fmt.Errorf("no value found")
-	}
-
-	if end == -1 {
-		end = len(response) - 1
-	}
-
-	return
+	return cmdResponse{true, response, nil}
 }
 
-func (z *Zencached) sendAndReadResponse(
+func (nw *nodeWorkers) sendAndReadResponse(
 	telnetConn *Telnet,
 	beginResponseSet, endResponseSet memcachedResponseSet,
 	renderedCmd []byte,
-) (exists bool, response []byte, err error) {
+) cmdResponse {
 
-	err = telnetConn.Send(renderedCmd)
+	err := telnetConn.Send(renderedCmd)
 	if err == nil {
-		exists, response, err = z.checkResponse(telnetConn, beginResponseSet, endResponseSet)
+		return nw.checkResponse(telnetConn, beginResponseSet, endResponseSet)
 	}
 
-	return
+	return cmdResponse{false, nil, err}
 }
 
-func (z *Zencached) sendAndReadResponseWrapper(
-	telnetConn *Telnet,
-	cmd MemcachedCommand,
-	beginResponseSet, endResponseSet memcachedResponseSet,
-	renderedCmd, path, key []byte,
-	forceCacheMissMetric bool,
-) (exists bool, response []byte, err error) {
+func (nw *nodeWorkers) sendAndReadResponseWrapper(telnetConn *Telnet, job cmdJob) (res cmdResponse) {
 
-	if z.configuration.MetricsCollector == nil {
+	if nw.configuration.MetricsCollector == nil {
 
-		exists, response, err = z.sendAndReadResponse(telnetConn, beginResponseSet, endResponseSet, renderedCmd)
+		res = nw.sendAndReadResponse(telnetConn, job.beginResponseSet, job.endResponseSet, job.renderedCmd)
 
 	} else {
 
-		z.configuration.MetricsCollector.CommandExecution(telnetConn.GetNodeHost(), cmd, path, key)
+		nw.configuration.MetricsCollector.CommandExecution(telnetConn.GetNodeHost(), job.cmd, job.path, job.key)
 
 		start := time.Now()
 
-		exists, response, err = z.sendAndReadResponse(telnetConn, beginResponseSet, endResponseSet, renderedCmd)
+		res = nw.sendAndReadResponse(telnetConn, job.beginResponseSet, job.endResponseSet, job.renderedCmd)
 
 		elapsedTime := time.Since(start)
 
-		z.configuration.MetricsCollector.CommandExecutionElapsedTime(
+		nw.configuration.MetricsCollector.CommandExecutionElapsedTime(
 			telnetConn.GetNodeHost(),
-			cmd,
-			path, key,
+			job.cmd, job.path, job.key,
 			elapsedTime.Nanoseconds(),
 		)
 
-		if exists && !forceCacheMissMetric {
-			z.configuration.MetricsCollector.CacheHitEvent(telnetConn.GetNodeHost(), cmd, path, key)
+		if res.exists && !job.forceCacheMissMetric {
+			nw.configuration.MetricsCollector.CacheHitEvent(telnetConn.GetNodeHost(), job.cmd, job.path, job.key)
 		} else {
-			z.configuration.MetricsCollector.CacheMissEvent(telnetConn.GetNodeHost(), cmd, path, key)
+			nw.configuration.MetricsCollector.CacheMissEvent(telnetConn.GetNodeHost(), job.cmd, job.path, job.key)
 		}
 
-		if err != nil {
+		if res.err != nil {
 
-			z.configuration.MetricsCollector.CommandExecutionError(
+			nw.configuration.MetricsCollector.CommandExecutionError(
 				telnetConn.GetNodeHost(),
-				cmd,
-				path, key,
-				err,
+				job.cmd, job.path, job.key,
+				res.err,
 			)
-		}
-	}
-
-	if errors.Is(err, ErrNoAvailableConnections) || errors.Is(err, ErrMaxReconnectionsReached) || errors.Is(err, ErrMemcachedNoResponse) {
-
-		if z.configuration.RebalanceOnDisconnection {
-			z.setNodeAsDisconnected(telnetConn)
-			go z.Rebalance()
 		}
 	}
 

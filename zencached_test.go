@@ -2,6 +2,7 @@ package zencached_test
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,7 +49,7 @@ func createZencached(nodes []zencached.Node, rebalanceOnDisconnection bool, metr
 
 	c := &zencached.Configuration{
 		Nodes:                    nodes,
-		NumConnectionsPerNode:    3,
+		NumConnectionsPerNode:    2,
 		TelnetConfiguration:      *createTelnetConf(nil),
 		MetricsCollector:         metricCollector,
 		RebalanceOnDisconnection: rebalanceOnDisconnection,
@@ -71,7 +72,7 @@ func (ts *zencachedTestSuite) TestRouting() {
 
 	f := func(path, key []byte, expected int) bool {
 
-		tconn, index, err := ts.instance.GetTelnetConnection(key, path, key)
+		_, index, err := ts.instance.GetConnectedNodeWorkers(key, path, key)
 		if !ts.NoError(err, "expects no error getting a connection") {
 			return false
 		}
@@ -79,8 +80,6 @@ func (ts *zencachedTestSuite) TestRouting() {
 		if !ts.Equalf(expected, index, "expected index %d", expected) {
 			return false
 		}
-
-		ts.instance.ReturnTelnetConnection(tconn, index)
 
 		return true
 	}
@@ -147,14 +146,19 @@ func (ts *zencachedTestSuite) TestGetCommand() {
 
 	f := func(route []byte, path, key, value string, testIndex int) {
 
-		telnetConn, index, err := ts.instance.GetTelnetConnection(route, []byte(path), []byte(key))
+		nw, _, err := ts.instance.GetConnectedNodeWorkers(route, []byte(path), []byte(key))
 		if !ts.NoError(err, "expects no error getting a connection") {
 			return
 		}
 
-		defer ts.instance.ReturnTelnetConnection(telnetConn, index)
+		t, err := nw.NewTelnetFromNode()
+		if !ts.NoError(err, "expected no error creating telnet connection") {
+			return
+		}
 
-		ts.rawSetKey(telnetConn, path, key, value)
+		defer t.Close()
+
+		ts.rawSetKey(t, path, key, value)
 
 		response, found, err := ts.instance.Get(route, []byte(path), []byte(key))
 		if !ts.NoError(err, "expected no error storing key") {
@@ -221,15 +225,20 @@ func (ts *zencachedTestSuite) TestDeleteCommand() {
 
 	f := func(route []byte, path, key, value string, setValue bool, testIndex int) {
 
-		telnetConn, index, err := ts.instance.GetTelnetConnection(route, []byte(path), []byte(key))
+		nw, _, err := ts.instance.GetConnectedNodeWorkers(route, []byte(path), []byte(key))
 		if !ts.NoError(err, "expects no error getting a connection") {
 			return
 		}
 
-		defer ts.instance.ReturnTelnetConnection(telnetConn, index)
+		t, err := nw.NewTelnetFromNode()
+		if !ts.NoError(err, "expected no error creating telnet connection") {
+			return
+		}
+
+		defer t.Close()
 
 		if setValue {
-			ts.rawSetKey(telnetConn, path, key, value)
+			ts.rawSetKey(t, path, key, value)
 		}
 
 		status, err := ts.instance.Delete(route, []byte(path), []byte(key))
@@ -262,6 +271,39 @@ func (ts *zencachedTestSuite) TestDeleteCommand() {
 	f([]byte{5}, "path", "test7", "test7", true, 7)
 	f([]byte{5}, "path", "test8", "test8", true, 8)
 	f([]byte{8}, "path", "test7", "test8", false, 9)
+}
+
+// TestVersionCommand - tests the version command
+func (ts *zencachedTestSuite) TestVersionCommand() {
+
+	nw, _, err := ts.instance.GetConnectedNodeWorkers(nil, nil, nil) //any
+	if !ts.NoError(err, "expects no error getting a connection") {
+		return
+	}
+
+	t, err := nw.NewTelnetFromNode()
+	if !ts.NoError(err, "expected no error creating telnet connection") {
+		return
+	}
+
+	defer t.Close()
+
+	err = t.Send([]byte("version\r\n"))
+	if !ts.NoError(err, "error sending version command") {
+		return
+	}
+
+	payload, err := t.Read([][]byte{[]byte("VERSION")})
+	if !ts.NoError(err, "error reading response") {
+		return
+	}
+
+	value, err := ts.instance.Version(nil)
+	if !ts.NoError(err, "error getting version") {
+		return
+	}
+
+	ts.Equal(strings.Split(strings.TrimSpace(string(payload)), " ")[1], string(value), "expected same version")
 }
 
 func TestZencachedSuite(t *testing.T) {

@@ -22,6 +22,9 @@ type Configuration struct {
 	// NumConnectionsPerNode - the number of connections for each memcached node
 	NumConnectionsPerNode int
 
+	// CommandExecutionBufferSize - the number of command execution jobs buffered
+	CommandExecutionBufferSize int
+
 	// NumNodeListRetries - the number of node listing retry after an error
 	NumNodeListRetries int
 
@@ -56,6 +59,10 @@ func (c *Configuration) setDefaults() {
 		c.NumConnectionsPerNode = 1
 	}
 
+	if c.CommandExecutionBufferSize == 0 {
+		c.CommandExecutionBufferSize = 10
+	}
+
 	if c.NumNodeListRetries == 0 {
 		c.NumNodeListRetries = 1
 	}
@@ -75,14 +82,14 @@ func (c *Configuration) setDefaults() {
 
 // Zencached - declares the main structure
 type Zencached struct {
-	numNodeTelnetConns int
-	configuration      *Configuration
-	logger             *logh.ContextualLogger
-	shuttingDown       uint32
-	rebalanceLock      uint32
-	notAvailable       uint32
-	nodeWorkerArray    []nodeWorkers
-	connectedNodes     []Node
+	configuration    *Configuration
+	logger           *logh.ContextualLogger
+	shuttingDown     uint32
+	rebalanceLock    uint32
+	notAvailable     uint32
+	nodeWorkerArray  []*nodeWorkers
+	connectedNodes   []Node
+	rebalanceChannel chan struct{}
 }
 
 // New - creates a new instance
@@ -91,46 +98,17 @@ func New(configuration *Configuration) (*Zencached, error) {
 	configuration.setDefaults()
 
 	z := &Zencached{
-		nodeWorkerArray:    nil,
-		numNodeTelnetConns: 0,
-		configuration:      configuration,
-		logger:             logh.CreateContextualLogger("pkg", "zencached"),
+		nodeWorkerArray:  nil,
+		configuration:    configuration,
+		logger:           logh.CreateContextualLogger("pkg", "zencached"),
+		rebalanceChannel: make(chan struct{}),
 	}
 
 	z.Rebalance()
 
+	go z.rebalanceWorker()
+
 	return z, nil
-}
-
-func (z *Zencached) createNewTelnet(node Node) (*Telnet, error) {
-
-	telnetConn, err := NewTelnet(node, z.configuration.TelnetConfiguration)
-	if err != nil {
-		if logh.ErrorEnabled {
-			z.logger.Error().Str("host", node.Host).Int("port", node.Port).Err(err).Msg("error creating telnet")
-		}
-
-		if z.configuration.MetricsCollector != nil {
-			z.configuration.MetricsCollector.NodeRebalanceError()
-		}
-
-		return nil, err
-	}
-
-	err = telnetConn.Connect()
-	if err != nil {
-		if logh.ErrorEnabled {
-			z.logger.Error().Str("host", node.Host).Int("port", node.Port).Err(err).Msg("error connecting to host")
-		}
-
-		if z.configuration.MetricsCollector != nil {
-			z.configuration.MetricsCollector.NodeRebalanceError()
-		}
-
-		return nil, err
-	}
-
-	return telnetConn, nil
 }
 
 func (z *Zencached) tryListNodes() []Node {
@@ -201,9 +179,9 @@ func (z *Zencached) rebalance() {
 		z.configuration.MetricsCollector.NodeListingEvent(len(nodes))
 	}
 
-	nodeTelnetConns := make([]nodeWorkers, 0)
+	nodeTelnetConns := make([]*nodeWorkers, 0)
 	connectedNodes := []Node{}
-	connectedNodeWorkerMap := map[string]nodeWorkers{}
+	connectedNodeWorkerMap := map[string]*nodeWorkers{}
 
 	for i, node := range z.connectedNodes {
 		connectedNodeWorkerMap[node.String()] = z.nodeWorkerArray[i]
@@ -215,31 +193,18 @@ func (z *Zencached) rebalance() {
 
 		if nw, exists := connectedNodeWorkerMap[nodeKey]; exists {
 
+			telnetConn, err := nw.NewTelnetFromNode()
+
 			if atomic.LoadUint32(&nw.connected) == 0 {
 
-				telnetConn, err := z.createNewTelnet(node)
 				if err != nil {
 					continue
 				}
-
-				telnetConn.Close()
 
 				atomic.StoreUint32(&nw.connected, 1)
 				connectedNodeWorkerMap[nodeKey] = nw
 
 			} else {
-
-				telnetConn, err := z.findAvailableTelnetConnection(nw.channel)
-				if err != nil {
-					atomic.StoreUint32(&nw.connected, 0)
-					connectedNodeWorkerMap[nodeKey] = nw
-					continue
-				}
-
-				nw.channel <- telnetConn
-
-				telnetConn.Close()
-				err = telnetConn.Connect()
 
 				if err != nil {
 					atomic.StoreUint32(&nw.connected, 0)
@@ -247,6 +212,8 @@ func (z *Zencached) rebalance() {
 					continue
 				}
 			}
+
+			telnetConn.Close()
 
 			nodeTelnetConns = append(nodeTelnetConns, nw)
 			connectedNodes = append(connectedNodes, node)
@@ -254,22 +221,9 @@ func (z *Zencached) rebalance() {
 			continue
 		}
 
-		telnetChan := make(chan *Telnet, z.configuration.NumConnectionsPerNode)
-
-		for c := 0; c < z.configuration.NumConnectionsPerNode; c++ {
-
-			telnetConn, err := z.createNewTelnet(node)
-			if err != nil {
-				continue
-			}
-
-			telnetChan <- telnetConn
-		}
-
-		nw := nodeWorkers{
-			channel:   telnetChan,
-			connected: 1,
-			node:      node,
+		nw, err := z.createNodeWorker(node, z.rebalanceChannel)
+		if err != nil {
+			continue
 		}
 
 		nodeTelnetConns = append(nodeTelnetConns, nw)
@@ -277,15 +231,14 @@ func (z *Zencached) rebalance() {
 		connectedNodeWorkerMap[nodeKey] = nw
 	}
 
-	for _, nodeChannelsValue := range connectedNodeWorkerMap {
+	for _, nw := range connectedNodeWorkerMap {
 
-		if atomic.LoadUint32(&nodeChannelsValue.connected) == 0 {
-			z.closeNodeTelnetConnections(nodeChannelsValue)
+		if atomic.LoadUint32(&nw.connected) == 0 {
+			nw.terminate()
 		}
 	}
 
 	z.nodeWorkerArray = nodeTelnetConns
-	z.numNodeTelnetConns = len(nodeTelnetConns)
 	z.connectedNodes = connectedNodes
 
 	if logh.InfoEnabled {
@@ -316,6 +269,22 @@ func (z *Zencached) Rebalance() {
 	z.configuration.MetricsCollector.NodeRebalanceEvent(len(z.connectedNodes))
 }
 
+func (z *Zencached) rebalanceWorker() {
+
+	for range z.rebalanceChannel {
+
+		if logh.DebugEnabled {
+			z.logger.Debug().Msg("rebalance request received")
+		}
+
+		z.Rebalance()
+	}
+
+	if logh.DebugEnabled {
+		z.logger.Debug().Msg("rebalance channel closed")
+	}
+}
+
 // Shutdown - closes all connections
 func (z *Zencached) Shutdown() {
 
@@ -332,34 +301,16 @@ func (z *Zencached) Shutdown() {
 
 	atomic.SwapUint32(&z.shuttingDown, 1)
 
-	for nodeIndex, nodeConns := range z.nodeWorkerArray {
+	for ni, nw := range z.nodeWorkerArray {
 
 		if logh.InfoEnabled {
-			z.logger.Info().Msgf("closing node connections from index: %d", nodeIndex)
+			z.logger.Info().Msgf("closing node connections from index: %d", ni)
 		}
 
-		z.closeNodeTelnetConnections(nodeConns)
-	}
-}
-
-// closeNodeTelnetConnections - closes all connections
-func (z *Zencached) closeNodeTelnetConnections(nw nodeWorkers) {
-
-	for i := 0; i < z.configuration.NumConnectionsPerNode; i++ {
-
-		if logh.DebugEnabled {
-			z.logger.Debug().Msg("closing connection...")
-		}
-
-		conn := <-nw.channel
-		conn.Close()
-
-		if logh.DebugEnabled {
-			z.logger.Debug().Msg("connection closed")
-		}
+		nw.terminate()
 	}
 
-	close(nw.channel)
+	close(z.rebalanceChannel)
 }
 
 // GetConnectedNodes - returns the currently connected nodes
@@ -369,21 +320,4 @@ func (z *Zencached) GetConnectedNodes() []Node {
 	copy(c, z.connectedNodes)
 
 	return c
-}
-
-func (z *Zencached) setNodeAsDisconnected(telnetConn *Telnet) {
-
-	for i, nw := range z.nodeWorkerArray {
-
-		if nw.node.String() == telnetConn.node.String() {
-
-			atomic.StoreUint32(&z.nodeWorkerArray[i].connected, 0)
-
-			if logh.WarnEnabled {
-				z.logger.Warn().Msgf("node is marked for disconnection: %s", telnetConn.node.String())
-			}
-
-			break
-		}
-	}
 }

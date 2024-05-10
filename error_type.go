@@ -15,9 +15,9 @@ const (
 )
 
 var (
+	ErrMaxReconnectionsReached  ZError = NewError("maximum number of reconnections reached", ErrorTypeMaxReconnectionsReached)
 	ErrMemcachedInvalidResponse ZError = NewError("invalid memcached command response received", ErrorTypeMemcachedInvalidResponse)
 	ErrMemcachedNoResponse      ZError = NewError("no response from memcached", ErrorTypeMemcachedNoResponse)
-	ErrMaxReconnectionsReached  ZError = NewError("maximum number of reconnections reached", ErrorTypeMaxReconnectionsReached)
 	ErrTelnetConnectionIsClosed ZError = NewError("telnet connection is closed", ErrorTypeTelnetConnectionIsClosed)
 	ErrNoAvailableNodes         ZError = NewError("there are no nodes available", ErrorTypeNoAvailableNodes)
 	ErrNoAvailableConnections   ZError = NewError("there are no available connections", ErrorTypeNoAvailableConnections)

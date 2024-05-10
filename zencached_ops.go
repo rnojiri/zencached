@@ -33,12 +33,14 @@ var (
 	mcrEnd       []byte = []byte("END")
 	mcrNotFound  []byte = []byte("NOT_FOUND")
 	mcrDeleted   []byte = []byte("DELETED")
+	mcrVersion   []byte = []byte("VERSION")
 
 	// response set
-	mcrStoredResponseSet      memcachedResponseSet = memcachedResponseSet{mcrStored, mcrNotStored}
-	mcrGetCheckResponseSet    memcachedResponseSet = memcachedResponseSet{mcrEnd}
-	mcrGetCheckEndResponseSet memcachedResponseSet = memcachedResponseSet{mcrValue, mcrEnd}
-	mcrDeletedResponseSet     memcachedResponseSet = memcachedResponseSet{mcrDeleted, mcrNotFound}
+	mcrStoredResponseSet        memcachedResponseSet = memcachedResponseSet{mcrStored, mcrNotStored}
+	mcrGetCheckBeginResponseSet memcachedResponseSet = memcachedResponseSet{mcrEnd}
+	mcrGetCheckEndResponseSet   memcachedResponseSet = memcachedResponseSet{mcrValue, mcrEnd}
+	mcrDeletedResponseSet       memcachedResponseSet = memcachedResponseSet{mcrDeleted, mcrNotFound}
+	mcrVersionResponseSet       memcachedResponseSet = memcachedResponseSet{mcrVersion}
 )
 
 // MemcachedCommand type
@@ -54,35 +56,12 @@ var (
 	// Get - return a key if it exists or not
 	Get MemcachedCommand = MemcachedCommand("get")
 
-	// Delete - return a key if it exists or not
+	// Delete - deletes a key if it exists or not
 	Delete MemcachedCommand = MemcachedCommand("delete")
+
+	// Version - returns the server version
+	Version MemcachedCommand = MemcachedCommand("version")
 )
-
-// checkResponse - checks the memcached response
-func (z *Zencached) checkResponse(
-	telnetConn *Telnet,
-	checkReadSet, checkResponseSet memcachedResponseSet,
-) (bool, []byte, error) {
-
-	response, err := telnetConn.Read(checkReadSet)
-	if err != nil {
-		return false, nil, err
-	}
-
-	if len(response) == 0 {
-		return false, nil, ErrMemcachedNoResponse
-	}
-
-	if !bytes.HasPrefix(response, checkResponseSet[0]) {
-		if !bytes.Contains(response, checkResponseSet[1]) {
-			return false, nil, fmt.Errorf("%w: %s", ErrMemcachedInvalidResponse, string(response))
-		}
-
-		return false, response, nil
-	}
-
-	return true, response, nil
-}
 
 // renderStoreCmd - like Sprintf, but in bytes
 func (z *Zencached) renderStoreCmd(cmd MemcachedCommand, path, key, value []byte, ttl uint64) []byte {
@@ -122,32 +101,35 @@ func (z *Zencached) Add(routerHash, path, key, value []byte, ttl uint64) (bool, 
 	return z.store(Add, routerHash, path, key, value, ttl)
 }
 
-// store - internal stores
+// store - generic store
 func (z *Zencached) store(cmd MemcachedCommand, routerHash, path, key, value []byte, ttl uint64) (bool, error) {
 
-	telnetConn, index, err := z.GetTelnetConnection(routerHash, path, key)
+	nw, _, err := z.GetConnectedNodeWorkers(routerHash, path, key)
 	if err != nil {
 		return false, err
 	}
 
-	defer z.ReturnTelnetConnection(telnetConn, index)
-
-	return z.baseStore(telnetConn, cmd, path, key, value, ttl)
+	return z.baseStore(nw, cmd, path, key, value, ttl)
 }
 
 // baseStore - base storage function
-func (z *Zencached) baseStore(telnetConn *Telnet, cmd MemcachedCommand, path, key, value []byte, ttl uint64) (bool, error) {
+func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, value []byte, ttl uint64) (bool, error) {
 
-	stored, _, err := z.sendAndReadResponseWrapper(
-		telnetConn,
-		cmd,
-		mcrStoredResponseSet, mcrStoredResponseSet,
-		z.renderStoreCmd(cmd, path, key, value, ttl),
-		path, key,
-		true,
-	)
+	job := cmdJob{
+		cmd:                  cmd,
+		beginResponseSet:     mcrStoredResponseSet,
+		endResponseSet:       mcrStoredResponseSet,
+		renderedCmd:          z.renderStoreCmd(cmd, path, key, value, ttl),
+		path:                 path,
+		key:                  key,
+		forceCacheMissMetric: true,
+		response:             make(chan cmdResponse),
+	}
 
-	return stored, err
+	nw.jobs <- job
+	result := <-job.response
+
+	return result.exists, result.err
 }
 
 // renderKeyOnlyCmd - like Sprintf, but in bytes
@@ -167,63 +149,165 @@ func (z *Zencached) renderKeyOnlyCmd(cmd MemcachedCommand, path, key []byte) []b
 // Get - performs a get operation
 func (z *Zencached) Get(routerHash, path, key []byte) ([]byte, bool, error) {
 
-	telnetConn, index, err := z.GetTelnetConnection(routerHash, path, key)
+	nw, _, err := z.GetConnectedNodeWorkers(routerHash, path, key)
 	if err != nil {
 		return nil, false, err
 	}
 
-	defer z.ReturnTelnetConnection(telnetConn, index)
-
-	return z.baseGet(telnetConn, path, key)
+	return z.baseGet(nw, path, key)
 }
 
-// baseGet - the base get operation
-func (z *Zencached) baseGet(telnetConn *Telnet, path, key []byte) ([]byte, bool, error) {
+// extractGetCmdValue - extracts a value from the response
+func (z *Zencached) extractGetCmdValue(response []byte) (start, end int, err error) {
 
-	exists, response, err := z.sendAndReadResponseWrapper(
-		telnetConn,
-		Get,
-		mcrGetCheckResponseSet, mcrGetCheckEndResponseSet,
-		z.renderKeyOnlyCmd(Get, path, key),
-		path, key,
-		false,
-	)
-	if !exists || err != nil {
-		return nil, false, err
+	start = -1
+	end = -1
+
+	for i := 0; i < len(response); i++ {
+		if start == -1 && response[i] == lineBreaksN {
+			start = i + 1
+		} else if start >= 0 && response[i] == lineBreaksR {
+			end = i
+			break
+		}
 	}
 
-	start, end, err := z.extractValue([]byte(response))
+	if start == -1 {
+		err = fmt.Errorf("no value found")
+	}
+
+	if end == -1 {
+		end = len(response) - 1
+	}
+
+	return
+}
+
+// baseGet - performs a get operation
+func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) ([]byte, bool, error) {
+
+	job := cmdJob{
+		cmd:                  Get,
+		beginResponseSet:     mcrGetCheckBeginResponseSet,
+		endResponseSet:       mcrGetCheckEndResponseSet,
+		renderedCmd:          z.renderKeyOnlyCmd(Get, path, key),
+		path:                 path,
+		key:                  key,
+		forceCacheMissMetric: false,
+		response:             make(chan cmdResponse),
+	}
+
+	nw.jobs <- job
+	result := <-job.response
+
+	if !result.exists || result.err != nil {
+		return nil, false, result.err
+	}
+
+	start, end, err := z.extractGetCmdValue([]byte(result.response))
 	if err != nil {
 		return nil, false, err
 	}
 
-	return response[start:end], true, nil
+	return result.response[start:end], true, nil
 }
 
 // Delete - performs a delete operation
 func (z *Zencached) Delete(routerHash, path, key []byte) (bool, error) {
 
-	telnetConn, index, err := z.GetTelnetConnection(routerHash, path, key)
+	nw, _, err := z.GetConnectedNodeWorkers(routerHash, path, key)
 	if err != nil {
 		return false, err
 	}
 
-	defer z.ReturnTelnetConnection(telnetConn, index)
-
-	return z.baseDelete(telnetConn, path, key)
+	return z.baseDelete(nw, path, key)
 }
 
-// baseDelete - base delete operation
-func (z *Zencached) baseDelete(telnetConn *Telnet, path, key []byte) (bool, error) {
+// baseDelete - performs a delete operation
+func (z *Zencached) baseDelete(nw *nodeWorkers, path, key []byte) (bool, error) {
 
-	exists, _, err := z.sendAndReadResponseWrapper(
-		telnetConn,
-		Delete,
-		mcrDeletedResponseSet, mcrDeletedResponseSet,
-		z.renderKeyOnlyCmd(Delete, path, key),
-		path, key,
-		false,
-	)
+	job := cmdJob{
+		cmd:                  Delete,
+		beginResponseSet:     mcrDeletedResponseSet,
+		endResponseSet:       mcrDeletedResponseSet,
+		renderedCmd:          z.renderKeyOnlyCmd(Delete, path, key),
+		path:                 path,
+		key:                  key,
+		forceCacheMissMetric: false,
+		response:             make(chan cmdResponse),
+	}
 
-	return exists, err
+	nw.jobs <- job
+	result := <-job.response
+
+	return result.exists, result.err
+}
+
+// renderNoParameterCmd - like Sprintf, but in bytes
+func (z *Zencached) renderNoParameterCmd(cmd MemcachedCommand) []byte {
+
+	buffer := bytes.Buffer{}
+	buffer.Grow(len(cmd) + len(doubleBreaks))
+	buffer.Write(cmd)
+	buffer.Write(doubleBreaks)
+
+	return buffer.Bytes()
+}
+
+// extractVersionCmdValue - extracts a value from the response
+func (z *Zencached) extractVersionCmdValue(response []byte) (start, end int, err error) {
+
+	start = -1
+	end = len(response) - 2
+
+	for i := len(response) - 1; i >= 0; i-- {
+		if response[i] == whiteSpace {
+			start = i + 1
+			break
+		}
+	}
+
+	if start == -1 {
+		err = fmt.Errorf("no value found")
+	}
+
+	return
+}
+
+// Version - performs a version operation
+func (z *Zencached) Version(routerHash []byte) ([]byte, error) {
+
+	nw, _, err := z.GetConnectedNodeWorkers(routerHash, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return z.baseVersion(nw)
+}
+
+// baseVersion - performs a get operation
+func (z *Zencached) baseVersion(nw *nodeWorkers) ([]byte, error) {
+
+	job := cmdJob{
+		cmd:                  Version,
+		beginResponseSet:     mcrVersionResponseSet,
+		endResponseSet:       mcrVersionResponseSet,
+		renderedCmd:          z.renderNoParameterCmd(Version),
+		forceCacheMissMetric: true,
+		response:             make(chan cmdResponse),
+	}
+
+	nw.jobs <- job
+	result := <-job.response
+
+	if !result.exists || result.err != nil {
+		return nil, result.err
+	}
+
+	start, end, err := z.extractVersionCmdValue([]byte(result.response))
+	if err != nil {
+		return nil, err
+	}
+
+	return result.response[start:end], nil
 }
