@@ -14,7 +14,7 @@ func Benchmark(b *testing.B) {
 	c := &zencached.Configuration{
 		Nodes:                 nodes,
 		NumConnectionsPerNode: 3,
-		TelnetConfiguration:   *createTelnetConf(),
+		TelnetConfiguration:   *createTelnetConf(nil),
 	}
 
 	z, err := zencached.New(c)

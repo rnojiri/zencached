@@ -2,7 +2,6 @@ package zencached
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -35,16 +34,14 @@ var (
 	mcrEnd       []byte = []byte("END")
 	mcrNotFound  []byte = []byte("NOT_FOUND")
 	mcrDeleted   []byte = []byte("DELETED")
+	mcrVersion   []byte = []byte("VERSION")
 
 	// response set
-	mcrStoredResponseSet      memcachedResponseSet = memcachedResponseSet{mcrStored, mcrNotStored}
-	mcrGetCheckResponseSet    memcachedResponseSet = memcachedResponseSet{mcrEnd}
-	mcrGetCheckEndResponseSet memcachedResponseSet = memcachedResponseSet{mcrValue, mcrEnd}
-	mcrDeletedResponseSet     memcachedResponseSet = memcachedResponseSet{mcrDeleted, mcrNotFound}
-
-	ErrMemcachedInvalidResponse error = errors.New("invalid memcached command response received")
-	ErrMemcachedNoResponse      error = errors.New("no response from memcached")
-	ErrMaxCommandRetriesReached error = errors.New("maximum number of command retries reached")
+	mcrStoredResponseSet        memcachedResponseSet = memcachedResponseSet{mcrStored, mcrNotStored}
+	mcrGetCheckBeginResponseSet memcachedResponseSet = memcachedResponseSet{mcrEnd}
+	mcrGetCheckEndResponseSet   memcachedResponseSet = memcachedResponseSet{mcrValue, mcrEnd}
+	mcrDeletedResponseSet       memcachedResponseSet = memcachedResponseSet{mcrDeleted, mcrNotFound}
+	mcrVersionResponseSet       memcachedResponseSet = memcachedResponseSet{mcrVersion}
 )
 
 // MemcachedCommand type
@@ -60,35 +57,12 @@ var (
 	// Get - return a key if it exists or not
 	Get MemcachedCommand = MemcachedCommand("get")
 
-	// Delete - return a key if it exists or not
+	// Delete - deletes a key if it exists or not
 	Delete MemcachedCommand = MemcachedCommand("delete")
+
+	// Version - returns the server version
+	Version MemcachedCommand = MemcachedCommand("version")
 )
-
-// checkResponse - checks the memcached response
-func (z *Zencached) checkResponse(
-	telnetConn *Telnet,
-	checkReadSet, checkResponseSet memcachedResponseSet,
-) (bool, []byte, error) {
-
-	response, err := telnetConn.Read(checkReadSet)
-	if err != nil {
-		return false, nil, err
-	}
-
-	if len(response) == 0 {
-		return false, nil, ErrMemcachedNoResponse
-	}
-
-	if !bytes.HasPrefix(response, checkResponseSet[0]) {
-		if !bytes.Contains(response, checkResponseSet[1]) {
-			return false, nil, fmt.Errorf("%w: %s", ErrMemcachedInvalidResponse, string(response))
-		}
-
-		return false, response, nil
-	}
-
-	return true, response, nil
-}
 
 // renderStoreCmd - like Sprintf, but in bytes
 func (z *Zencached) renderStoreCmd(cmd MemcachedCommand, path, key, value []byte, ttl uint64) []byte {
@@ -128,33 +102,77 @@ func (z *Zencached) Add(routerHash, path, key, value []byte, ttl uint64) (bool, 
 	return z.store(Add, routerHash, path, key, value, ttl)
 }
 
-// store - internal stores
+// store - generic store
 func (z *Zencached) store(cmd MemcachedCommand, routerHash, path, key, value []byte, ttl uint64) (bool, error) {
 
-	telnetConn, index, err := z.GetTelnetConnection(routerHash, path, key)
+	nw, _, err := z.GetConnectedNodeWorkers(routerHash, path, key)
 	if err != nil {
 		return false, err
 	}
 
-	defer z.ReturnTelnetConnection(telnetConn, index)
+	return z.baseStore(nw, cmd, path, key, value, ttl)
+}
 
-	return z.baseStore(telnetConn, cmd, routerHash, path, key, value, ttl)
+func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
+
+	var result cmdResponse
+
+	if z.configuration.MetricsCollector == nil {
+
+		nw.jobs <- job
+		result = <-job.response
+
+	} else {
+
+		start := time.Now()
+
+		nw.jobs <- job
+		result = <-job.response
+
+		nw.configuration.MetricsCollector.CommandExecutionElapsedTime(
+			nw.node.Host,
+			job.cmd, job.path, job.key,
+			time.Since(start).Nanoseconds(),
+		)
+
+		nw.configuration.MetricsCollector.CommandExecution(nw.node.Host, job.cmd, job.path, job.key)
+
+		if result.exists && !job.forceCacheMissMetric {
+			nw.configuration.MetricsCollector.CacheHitEvent(nw.node.Host, job.cmd, job.path, job.key)
+		} else {
+			nw.configuration.MetricsCollector.CacheMissEvent(nw.node.Host, job.cmd, job.path, job.key)
+		}
+
+		if result.err != nil {
+
+			nw.configuration.MetricsCollector.CommandExecutionError(
+				nw.node.Host,
+				job.cmd, job.path, job.key,
+				result.err,
+			)
+		}
+	}
+
+	return result
 }
 
 // baseStore - base storage function
-func (z *Zencached) baseStore(telnetConn *Telnet, cmd MemcachedCommand, routerHash, path, key, value []byte, ttl uint64) (bool, error) {
+func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, value []byte, ttl uint64) (bool, error) {
 
-	stored, _, err := z.sendCommand(
-		telnetConn,
-		cmd,
-		mcrStoredResponseSet, mcrStoredResponseSet,
-		z.renderStoreCmd(cmd, path, key, value, ttl),
-		path, key,
-		0,
-		true,
-	)
+	job := cmdJob{
+		cmd:                  cmd,
+		beginResponseSet:     mcrStoredResponseSet,
+		endResponseSet:       mcrStoredResponseSet,
+		renderedCmd:          z.renderStoreCmd(cmd, path, key, value, ttl),
+		path:                 path,
+		key:                  key,
+		forceCacheMissMetric: true,
+		response:             make(chan cmdResponse),
+	}
 
-	return stored, err
+	result := z.addJobAndWait(nw, job)
+
+	return result.exists, result.err
 }
 
 // renderKeyOnlyCmd - like Sprintf, but in bytes
@@ -174,42 +192,16 @@ func (z *Zencached) renderKeyOnlyCmd(cmd MemcachedCommand, path, key []byte) []b
 // Get - performs a get operation
 func (z *Zencached) Get(routerHash, path, key []byte) ([]byte, bool, error) {
 
-	telnetConn, index, err := z.GetTelnetConnection(routerHash, path, key)
+	nw, _, err := z.GetConnectedNodeWorkers(routerHash, path, key)
 	if err != nil {
 		return nil, false, err
 	}
 
-	defer z.ReturnTelnetConnection(telnetConn, index)
-
-	return z.baseGet(telnetConn, path, key)
+	return z.baseGet(nw, path, key)
 }
 
-// baseGet - the base get operation
-func (z *Zencached) baseGet(telnetConn *Telnet, path, key []byte) ([]byte, bool, error) {
-
-	exists, response, err := z.sendCommand(
-		telnetConn,
-		Get,
-		mcrGetCheckResponseSet, mcrGetCheckEndResponseSet,
-		z.renderKeyOnlyCmd(Get, path, key),
-		path, key,
-		0,
-		false,
-	)
-	if !exists || err != nil {
-		return nil, false, err
-	}
-
-	start, end, err := z.extractValue([]byte(response))
-	if err != nil {
-		return nil, false, err
-	}
-
-	return response[start:end], true, nil
-}
-
-// extractValue - extracts a value from the response
-func (z *Zencached) extractValue(response []byte) (start, end int, err error) {
+// extractGetCmdValue - extracts a value from the response
+func (z *Zencached) extractGetCmdValue(response []byte) (start, end int, err error) {
 
 	start = -1
 	end = -1
@@ -234,108 +226,128 @@ func (z *Zencached) extractValue(response []byte) (start, end int, err error) {
 	return
 }
 
+// baseGet - performs a get operation
+func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) ([]byte, bool, error) {
+
+	job := cmdJob{
+		cmd:                  Get,
+		beginResponseSet:     mcrGetCheckBeginResponseSet,
+		endResponseSet:       mcrGetCheckEndResponseSet,
+		renderedCmd:          z.renderKeyOnlyCmd(Get, path, key),
+		path:                 path,
+		key:                  key,
+		forceCacheMissMetric: false,
+		response:             make(chan cmdResponse),
+	}
+
+	result := z.addJobAndWait(nw, job)
+
+	if !result.exists || result.err != nil {
+		return nil, false, result.err
+	}
+
+	start, end, err := z.extractGetCmdValue([]byte(result.response))
+	if err != nil {
+		return nil, false, err
+	}
+
+	return result.response[start:end], true, nil
+}
+
 // Delete - performs a delete operation
 func (z *Zencached) Delete(routerHash, path, key []byte) (bool, error) {
 
-	telnetConn, index, err := z.GetTelnetConnection(routerHash, path, key)
+	nw, _, err := z.GetConnectedNodeWorkers(routerHash, path, key)
 	if err != nil {
 		return false, err
 	}
 
-	defer z.ReturnTelnetConnection(telnetConn, index)
-
-	return z.baseDelete(telnetConn, path, key)
+	return z.baseDelete(nw, path, key)
 }
 
-// baseDelete - base delete operation
-func (z *Zencached) baseDelete(telnetConn *Telnet, path, key []byte) (bool, error) {
+// baseDelete - performs a delete operation
+func (z *Zencached) baseDelete(nw *nodeWorkers, path, key []byte) (bool, error) {
 
-	exists, _, err := z.sendCommand(
-		telnetConn,
-		Delete,
-		mcrDeletedResponseSet, mcrDeletedResponseSet,
-		z.renderKeyOnlyCmd(Delete, path, key),
-		path, key,
-		0,
-		false,
-	)
+	job := cmdJob{
+		cmd:                  Delete,
+		beginResponseSet:     mcrDeletedResponseSet,
+		endResponseSet:       mcrDeletedResponseSet,
+		renderedCmd:          z.renderKeyOnlyCmd(Delete, path, key),
+		path:                 path,
+		key:                  key,
+		forceCacheMissMetric: false,
+		response:             make(chan cmdResponse),
+	}
 
-	return exists, err
+	result := z.addJobAndWait(nw, job)
+
+	return result.exists, result.err
 }
 
-func (z *Zencached) sendAndReadResponse(
-	telnetConn *Telnet,
-	beginResponseSet, endResponseSet memcachedResponseSet,
-	renderedCmd []byte,
-) (exists bool, response []byte, err error) {
+// renderNoParameterCmd - like Sprintf, but in bytes
+func (z *Zencached) renderNoParameterCmd(cmd MemcachedCommand) []byte {
 
-	err = telnetConn.Send(renderedCmd)
-	if err == nil {
-		exists, response, err = z.checkResponse(telnetConn, beginResponseSet, endResponseSet)
+	buffer := bytes.Buffer{}
+	buffer.Grow(len(cmd) + len(doubleBreaks))
+	buffer.Write(cmd)
+	buffer.Write(doubleBreaks)
+
+	return buffer.Bytes()
+}
+
+// extractVersionCmdValue - extracts a value from the response
+func (z *Zencached) extractVersionCmdValue(response []byte) (start, end int, err error) {
+
+	start = -1
+	end = len(response) - 2
+
+	for i := len(response) - 1; i >= 0; i-- {
+		if response[i] == whiteSpace {
+			start = i + 1
+			break
+		}
+	}
+
+	if start == -1 {
+		err = fmt.Errorf("no value found")
 	}
 
 	return
 }
 
-func (z *Zencached) sendCommand(
-	telnetConn *Telnet,
-	cmd MemcachedCommand,
-	beginResponseSet, endResponseSet memcachedResponseSet,
-	renderedCmd, path, key []byte,
-	numRetry int,
-	forceCacheMissMetric bool,
-) (exists bool, response []byte, err error) {
+// Version - performs a version operation
+func (z *Zencached) Version(routerHash []byte) ([]byte, error) {
 
-	if z.configuration.MetricsCollector == nil {
-
-		exists, response, err = z.sendAndReadResponse(telnetConn, beginResponseSet, endResponseSet, renderedCmd)
-
-	} else {
-
-		z.configuration.MetricsCollector.CommandExecution(telnetConn.GetHost(), cmd, path, key)
-
-		start := time.Now()
-
-		exists, response, err = z.sendAndReadResponse(telnetConn, beginResponseSet, endResponseSet, renderedCmd)
-
-		elapsedTime := time.Since(start)
-
-		z.configuration.MetricsCollector.CommandExecutionElapsedTime(
-			telnetConn.GetHost(),
-			cmd,
-			path, key,
-			elapsedTime.Milliseconds(),
-		)
-
-		if exists && !forceCacheMissMetric {
-			z.configuration.MetricsCollector.CacheHitEvent(telnetConn.GetHost(), cmd, path, key)
-		} else {
-			z.configuration.MetricsCollector.CacheMissEvent(telnetConn.GetHost(), cmd, path, key)
-		}
-
-		if err != nil {
-
-			z.configuration.MetricsCollector.CommandExecutionError(
-				telnetConn.GetHost(),
-				cmd,
-				path, key,
-				err,
-			)
-		}
+	nw, _, err := z.GetConnectedNodeWorkers(routerHash, nil, nil)
+	if err != nil {
+		return nil, err
 	}
 
-	if errors.Is(err, ErrMaxReconnectionsReached) || errors.Is(err, ErrMemcachedNoResponse) {
+	return z.baseVersion(nw)
+}
 
-		if numRetry < z.configuration.NumCommandRetries {
-			return z.sendCommand(telnetConn, cmd, beginResponseSet, endResponseSet, renderedCmd, path, key, numRetry+1, forceCacheMissMetric)
-		}
+// baseVersion - performs a get operation
+func (z *Zencached) baseVersion(nw *nodeWorkers) ([]byte, error) {
 
-		if z.configuration.RebalanceOnDisconnection {
-			go z.Rebalance()
-		}
-
-		err = ErrMaxCommandRetriesReached
+	job := cmdJob{
+		cmd:                  Version,
+		beginResponseSet:     mcrVersionResponseSet,
+		endResponseSet:       mcrVersionResponseSet,
+		renderedCmd:          z.renderNoParameterCmd(Version),
+		forceCacheMissMetric: true,
+		response:             make(chan cmdResponse),
 	}
 
-	return
+	result := z.addJobAndWait(nw, job)
+
+	if !result.exists || result.err != nil {
+		return nil, result.err
+	}
+
+	start, end, err := z.extractVersionCmdValue([]byte(result.response))
+	if err != nil {
+		return nil, err
+	}
+
+	return result.response[start:end], nil
 }

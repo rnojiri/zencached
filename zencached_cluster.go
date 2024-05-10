@@ -20,20 +20,20 @@ func (z *Zencached) ClusterAdd(path, key, value []byte, ttl uint64) ([]bool, []e
 // clusterStore - performs an full storage operation operation
 func (z *Zencached) clusterStore(cmd MemcachedCommand, path, key, value []byte, ttl uint64) ([]bool, []error) {
 
-	stored := make([]bool, z.numNodeTelnetConns)
-	errors := make([]error, z.numNodeTelnetConns)
+	numNodes := len(z.nodeWorkerArray)
 
-	for i := 0; i < z.numNodeTelnetConns; i++ {
+	stored := make([]bool, numNodes)
+	errors := make([]error, numNodes)
 
-		var telnetConn *Telnet
-		telnetConn, errors[i] = z.GetTelnetConnByNodeIndex(i)
-		if errors[i] != nil {
+	for i := 0; i < numNodes; i++ {
+
+		nw, err := z.GetNodeWorkersByIndex(i)
+		if err != nil {
+			errors[i] = err
 			continue
 		}
 
-		defer z.ReturnTelnetConnection(telnetConn, i)
-
-		stored[i], errors[i] = z.baseStore(telnetConn, cmd, cmd, path, key, value, ttl)
+		stored[i], errors[i] = z.baseStore(nw, cmd, path, key, value, ttl)
 	}
 
 	return stored, errors
@@ -42,21 +42,21 @@ func (z *Zencached) clusterStore(cmd MemcachedCommand, path, key, value []byte, 
 // ClusterGet - returns a full replicated key stored in the cluster
 func (z *Zencached) ClusterGet(path, key []byte) ([][]byte, []bool, []error) {
 
-	values := make([][]byte, z.numNodeTelnetConns)
-	exists := make([]bool, z.numNodeTelnetConns)
-	errors := make([]error, z.numNodeTelnetConns)
+	numNodes := len(z.nodeWorkerArray)
 
-	for i := 0; i < z.numNodeTelnetConns; i++ {
+	values := make([][]byte, numNodes)
+	exists := make([]bool, numNodes)
+	errors := make([]error, numNodes)
 
-		var telnetConn *Telnet
-		telnetConn, errors[i] = z.GetTelnetConnByNodeIndex(i)
-		if errors[i] != nil {
+	for i := 0; i < numNodes; i++ {
+
+		nw, err := z.GetNodeWorkersByIndex(i)
+		if err != nil {
+			errors[i] = err
 			continue
 		}
 
-		defer z.ReturnTelnetConnection(telnetConn, i)
-
-		values[i], exists[i], errors[i] = z.baseGet(telnetConn, path, key)
+		values[i], exists[i], errors[i] = z.baseGet(nw, path, key)
 	}
 
 	return values, exists, errors
@@ -65,20 +65,20 @@ func (z *Zencached) ClusterGet(path, key []byte) ([][]byte, []bool, []error) {
 // ClusterDelete - deletes a key from all cluster nodes
 func (z *Zencached) ClusterDelete(path, key []byte) ([]bool, []error) {
 
-	deleted := make([]bool, z.numNodeTelnetConns)
-	errors := make([]error, z.numNodeTelnetConns)
+	numNodes := len(z.nodeWorkerArray)
 
-	for i := 0; i < z.numNodeTelnetConns; i++ {
+	deleted := make([]bool, numNodes)
+	errors := make([]error, numNodes)
 
-		var telnetConn *Telnet
-		telnetConn, errors[i] = z.GetTelnetConnByNodeIndex(i)
-		if errors[i] != nil {
+	for i := 0; i < numNodes; i++ {
+
+		nw, err := z.GetNodeWorkersByIndex(i)
+		if err != nil {
+			errors[i] = err
 			continue
 		}
 
-		defer z.ReturnTelnetConnection(telnetConn, i)
-
-		deleted[i], errors[i] = z.baseDelete(telnetConn, path, key)
+		deleted[i], errors[i] = z.baseDelete(nw, path, key)
 	}
 
 	return deleted, errors

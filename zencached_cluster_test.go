@@ -26,19 +26,24 @@ func (ts *zencachedTestSuite) TestClusterSetCommand() {
 			return
 		}
 
-		telnetConn, err := ts.instance.GetTelnetConnByNodeIndex(i)
+		nw, err := ts.instance.GetNodeWorkersByIndex(i)
 		if !ts.NoError(err, "expects no error getting a connection") {
 			return
 		}
 
-		defer ts.instance.ReturnTelnetConnection(telnetConn, i)
+		t, err := nw.NewTelnetFromNode()
+		if !ts.NoError(err, "expected no error creating telnet connection") {
+			return
+		}
 
-		err = telnetConn.Send([]byte("get " + string(path) + string(key) + "\r\n"))
+		defer t.Close()
+
+		err = t.Send([]byte("get " + string(path) + string(key) + "\r\n"))
 		if !ts.NoError(err, "expected success getting key") {
 			return
 		}
 
-		response, err := telnetConn.Read([][]byte{[]byte("END")})
+		response, err := t.Read([][]byte{[]byte("END")})
 		if !ts.NoError(err, "expected success reading last line") {
 			return
 		}
@@ -53,13 +58,19 @@ func (ts *zencachedTestSuite) TestClusterSetCommand() {
 func (ts *zencachedTestSuite) rawSetKeyOnAllNodes(path, key, value string) {
 
 	for i := 0; i < numNodes; i++ {
-		telnetConn, err := ts.instance.GetTelnetConnByNodeIndex(i)
+		nw, err := ts.instance.GetNodeWorkersByIndex(i)
 		if !ts.NoError(err, "expects no error getting a connection") {
 			return
 		}
 
-		ts.rawSetKey(telnetConn, path, key, value)
-		ts.instance.ReturnTelnetConnection(telnetConn, i)
+		t, err := nw.NewTelnetFromNode()
+		if !ts.NoError(err, "expected no error creating telnet connection") {
+			return
+		}
+
+		defer t.Close()
+
+		ts.rawSetKey(t, path, key, value)
 	}
 }
 
@@ -118,19 +129,24 @@ func (ts *zencachedTestSuite) TestClusterDeleteCommand() {
 			return
 		}
 
-		telnetConn, err := ts.instance.GetTelnetConnByNodeIndex(i)
+		nw, err := ts.instance.GetNodeWorkersByIndex(i)
 		if !ts.NoError(err, "expects no error getting a connection") {
 			return
 		}
 
-		defer ts.instance.ReturnTelnetConnection(telnetConn, i)
+		t, err := nw.NewTelnetFromNode()
+		if !ts.NoError(err, "expected no error creating telnet connection") {
+			return
+		}
 
-		err = telnetConn.Send([]byte("get " + key + "\r\n"))
+		defer t.Close()
+
+		err = t.Send([]byte("get " + key + "\r\n"))
 		if !ts.NoError(err, "expected success getting key") {
 			return
 		}
 
-		response, err := telnetConn.Read([][]byte{[]byte("END")})
+		response, err := t.Read([][]byte{[]byte("END")})
 		if !ts.NoError(err, "expected success reading last line") {
 			return
 		}
