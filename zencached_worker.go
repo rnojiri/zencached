@@ -27,6 +27,7 @@ type cmdJob struct {
 type nodeWorkers struct {
 	logger           *logh.ContextualLogger
 	connected        uint32
+	numUsedResources uint32
 	node             Node
 	jobs             chan cmdJob
 	rebalanceChannel chan<- struct{}
@@ -96,6 +97,7 @@ func (z *Zencached) createNodeWorker(node Node, rebalanceChannel chan<- struct{}
 		logger:           logh.CreateContextualLogger("pkg", "zencached", "node", node.String()),
 		node:             node,
 		connected:        1,
+		numUsedResources: 0,
 		jobs:             make(chan cmdJob, z.configuration.CommandExecutionBufferSize),
 		configuration:    z.configuration,
 		rebalanceChannel: rebalanceChannel,

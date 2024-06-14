@@ -12,6 +12,7 @@ const (
 	ErrorTypeTelnetConnectionIsClosed
 	ErrorTypeNoAvailableNodes
 	ErrorTypeNoAvailableConnections
+	ErrorTypeNoAvailableResources
 )
 
 var (
@@ -21,6 +22,7 @@ var (
 	ErrTelnetConnectionIsClosed ZError = NewError("telnet connection is closed", ErrorTypeTelnetConnectionIsClosed)
 	ErrNoAvailableNodes         ZError = NewError("there are no nodes available", ErrorTypeNoAvailableNodes)
 	ErrNoAvailableConnections   ZError = NewError("there are no available connections", ErrorTypeNoAvailableConnections)
+	ErrNoAvailableResources     ZError = NewError("no available resources", ErrorTypeNoAvailableResources)
 )
 
 // ZErrorData - a struc to store some metadata in the error to be an alternative to include zencached deps

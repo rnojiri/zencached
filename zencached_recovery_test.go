@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -29,7 +31,7 @@ func (ts *zencachedRecoveryTestSuite) SetupSuite() {
 	nodes := startMemcachedCluster()
 
 	var err error
-	ts.instance, ts.config, err = createZencached(nodes, true, nil, nil)
+	ts.instance, ts.config, err = createZencached(nodes, 50, true, nil, nil)
 	if err != nil {
 		ts.T().Fatalf("expected no errors creating zencached: %v", err)
 	}
@@ -249,9 +251,10 @@ func TestZencachedRecoveryTestSuite(t *testing.T) {
 // TestMaxConnectionRetryError - tests when the maximum number of connections is reached
 func TestMaxConnectionRetryError(t *testing.T) {
 
+	terminatePods()
 	newPodName, newNode := createExtraMemcachedPod(t)
 
-	instance, _, err := createZencached([]zencached.Node{newNode}, false, nil, nil)
+	instance, _, err := createZencached([]zencached.Node{newNode}, 10, false, nil, nil)
 	if err != nil {
 		t.Fatalf("expected no errors creating zencached: %v", err)
 	}
@@ -272,9 +275,58 @@ func TestMaxConnectionRetryError(t *testing.T) {
 	defer dockerh.Remove(newPodName)
 
 	_, _, err = instance.Get(nil, []byte("p"), []byte("k"))
+	if !isDisconnectionError(t, err) {
+		return
+	}
+
+	_, _, err = instance.Get(nil, []byte("p"), []byte("k"))
 	if !assert.NoError(t, err, "expected no error reconnecting") {
 		return
 	}
+
+	instance.Shutdown()
+}
+
+// TestNoAvailableResourcesError - tests when the maximum number of goroutines is reached
+func TestNoAvailableResourcesError(t *testing.T) {
+
+	terminatePods()
+	_, newNode := createExtraMemcachedPod(t)
+	defer terminatePods()
+
+	instance, _, err := createZencached([]zencached.Node{newNode}, 1, false, nil, nil)
+	if err != nil {
+		t.Fatalf("expected no errors creating zencached: %v", err)
+	}
+
+	var successCount, expectedErrorCount, otherErrors uint32
+	wc := sync.WaitGroup{}
+	wc.Add(10)
+
+	for i := 0; i < 10; i++ {
+
+		go func() {
+			_, _, err = instance.Get(nil, []byte("p"), []byte("k"))
+			if err == nil {
+				atomic.AddUint32(&successCount, 1)
+			} else {
+
+				if errors.Is(err, zencached.ErrNoAvailableResources) {
+					atomic.AddUint32(&expectedErrorCount, 1)
+				} else {
+					atomic.AddUint32(&otherErrors, 1)
+				}
+			}
+
+			wc.Done()
+		}()
+	}
+
+	wc.Wait()
+
+	assert.Equal(t, uint32(1), successCount, "expected only one success")
+	assert.Equal(t, uint32(9), expectedErrorCount, "expected nine no resources available errors")
+	assert.Equal(t, uint32(0), otherErrors, "expected no other error types")
 
 	instance.Shutdown()
 }

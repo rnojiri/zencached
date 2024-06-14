@@ -146,16 +146,13 @@ type telnetTestSuite struct {
 func createTelnetConf(metricsCollector zencached.TelnetMetricsCollector) *zencached.TelnetConfiguration {
 
 	tc := &zencached.TelnetConfiguration{
-		ReconnectionTimeout:   time.Second,
-		MaxWriteTimeout:       time.Second,
-		MaxReadTimeout:        time.Second,
-		HostConnectionTimeout: time.Second,
-		MaxWriteRetries:       3,
-		ReadBufferSize:        2048,
-	}
-
-	if metricsCollector != nil {
-		tc.TelnetMetricsCollector = metricsCollector
+		ReconnectionTimeout:    time.Second,
+		MaxWriteTimeout:        time.Second,
+		MaxReadTimeout:         time.Second,
+		HostConnectionTimeout:  time.Second,
+		MaxWriteRetries:        3,
+		ReadBufferSize:         2048,
+		TelnetMetricsCollector: metricsCollector,
 	}
 
 	return tc
@@ -289,7 +286,11 @@ func (ts *telnetTestSuite) TestInsertCommand() {
 
 func TestTelnetSuite(t *testing.T) {
 
-	suite.Run(t, new(telnetTestSuite))
+	suite.Run(t,
+		&telnetTestSuite{
+			enableMetrics: false,
+		},
+	)
 }
 
 func TestTelnetWithMetricsSuite(t *testing.T) {
