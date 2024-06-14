@@ -36,9 +36,9 @@ func (e ZErrorData) Error() string {
 	return e.msg
 }
 
-func (e ZErrorData) Code() uint8 {
+func (e ZErrorData) Code() ErrorType {
 
-	return uint8(e.errorType)
+	return e.errorType
 }
 
 func (e ZErrorData) String() string {
