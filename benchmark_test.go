@@ -2,6 +2,7 @@ package zencached_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/rnojiri/zencached"
 )
@@ -12,9 +13,15 @@ func Benchmark(b *testing.B) {
 	defer terminatePods()
 
 	c := &zencached.Configuration{
-		Nodes:                 nodes,
-		NumConnectionsPerNode: 3,
-		TelnetConfiguration:   *createTelnetConf(nil),
+		Nodes:                      nodes,
+		NumConnectionsPerNode:      10,
+		TelnetConfiguration:        *createTelnetConf(nil),
+		CommandExecutionBufferSize: 100,
+		NumNodeListRetries:         1,
+		RebalanceOnDisconnection:   false,
+		ZencachedMetricsCollector:  nil,
+		NodeListFunction:           nil,
+		NodeListRetryTimeout:       time.Second,
 	}
 
 	z, err := zencached.New(c)

@@ -23,7 +23,7 @@ type Configuration struct {
 	NumConnectionsPerNode int
 
 	// CommandExecutionBufferSize - the number of command execution jobs buffered
-	CommandExecutionBufferSize int
+	CommandExecutionBufferSize uint32
 
 	// NumNodeListRetries - the number of node listing retry after an error
 	NumNodeListRetries int
@@ -76,6 +76,7 @@ type Zencached struct {
 	nodeWorkerArray  []*nodeWorkers
 	connectedNodes   []Node
 	rebalanceChannel chan struct{}
+	metricsEnabled   bool
 }
 
 // New - creates a new instance
@@ -88,6 +89,7 @@ func New(configuration *Configuration) (*Zencached, error) {
 		configuration:    configuration,
 		logger:           logh.CreateContextualLogger("pkg", "zencached"),
 		rebalanceChannel: make(chan struct{}),
+		metricsEnabled:   !interfaceIsNil(configuration.ZencachedMetricsCollector),
 	}
 
 	z.Rebalance()
@@ -108,7 +110,7 @@ func (z *Zencached) tryListNodes() []Node {
 		nodes, err := z.configuration.NodeListFunction()
 		if err != nil {
 
-			if z.configuration.ZencachedMetricsCollector != nil {
+			if z.metricsEnabled {
 				z.configuration.ZencachedMetricsCollector.NodeListingError()
 			}
 
@@ -153,7 +155,7 @@ func (z *Zencached) rebalance() {
 
 	var nodes []Node
 
-	if z.configuration.ZencachedMetricsCollector == nil {
+	if !z.metricsEnabled {
 
 		nodes = z.tryListNodes()
 
@@ -244,7 +246,7 @@ func (z *Zencached) rebalance() {
 // Rebalance - rebalance all nodes
 func (z *Zencached) Rebalance() {
 
-	if z.configuration.ZencachedMetricsCollector == nil {
+	if !z.metricsEnabled {
 		z.rebalance()
 		return
 	}

@@ -31,7 +31,7 @@ func (ts *zencachedTestSuite) SetupSuite() {
 	nodes := startMemcachedCluster()
 
 	var err error
-	ts.instance, ts.config, err = createZencached(nodes, false, nil, nil)
+	ts.instance, ts.config, err = createZencached(nodes, 10, false, nil, nil)
 	if err != nil {
 		ts.T().Fatalf("expected no errors creating zencached: %v", err)
 	}
@@ -45,16 +45,17 @@ func (ts *zencachedTestSuite) TearDownSuite() {
 }
 
 // createZencached - creates a new client
-func createZencached(nodes []zencached.Node, rebalanceOnDisconnection bool, metricCollector zencached.ZencachedMetricsCollector, telnetMetricsCollector zencached.TelnetMetricsCollector) (*zencached.Zencached, *zencached.Configuration, error) {
+func createZencached(nodes []zencached.Node, commandExecutionBufferSize uint32, rebalanceOnDisconnection bool, metricCollector zencached.ZencachedMetricsCollector, telnetMetricsCollector zencached.TelnetMetricsCollector) (*zencached.Zencached, *zencached.Configuration, error) {
 
 	c := &zencached.Configuration{
-		Nodes:                     nodes,
-		NumConnectionsPerNode:     2,
-		TelnetConfiguration:       *createTelnetConf(telnetMetricsCollector),
-		ZencachedMetricsCollector: metricCollector,
-		RebalanceOnDisconnection:  rebalanceOnDisconnection,
-		NumNodeListRetries:        1,
-		NodeListRetryTimeout:      100 * time.Millisecond,
+		Nodes:                      nodes,
+		NumConnectionsPerNode:      2,
+		TelnetConfiguration:        *createTelnetConf(telnetMetricsCollector),
+		ZencachedMetricsCollector:  metricCollector,
+		RebalanceOnDisconnection:   rebalanceOnDisconnection,
+		NumNodeListRetries:         1,
+		NodeListRetryTimeout:       100 * time.Millisecond,
+		CommandExecutionBufferSize: commandExecutionBufferSize,
 	}
 
 	z, err := zencached.New(c)

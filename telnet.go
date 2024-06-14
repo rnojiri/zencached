@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"reflect"
 	"strings"
 	"time"
 
@@ -89,11 +90,19 @@ func (tc *TelnetConfiguration) setDefaults() {
 
 // Telnet - the telnet structure
 type Telnet struct {
-	address       *net.TCPAddr
-	connection    *net.TCPConn
-	logger        *logh.ContextualLogger
-	configuration TelnetConfiguration
-	node          Node
+	address        *net.TCPAddr
+	connection     *net.TCPConn
+	logger         *logh.ContextualLogger
+	configuration  TelnetConfiguration
+	node           Node
+	metricsEnabled bool
+}
+
+func interfaceIsNil(subject interface{}) bool {
+
+	v := reflect.ValueOf(subject)
+
+	return !v.IsValid() || v.IsZero() || v.IsNil()
 }
 
 // NewTelnet - creates a new telnet connection
@@ -110,9 +119,10 @@ func NewTelnet(node Node, configuration TelnetConfiguration) (*Telnet, error) {
 	}
 
 	t := &Telnet{
-		logger:        logh.CreateContextualLogger("pkg", "zencached/telnet"),
-		configuration: configuration,
-		node:          node,
+		logger:         logh.CreateContextualLogger("pkg", "zencached/telnet"),
+		configuration:  configuration,
+		node:           node,
+		metricsEnabled: !interfaceIsNil(configuration.TelnetMetricsCollector),
 	}
 
 	return t, nil
@@ -149,7 +159,7 @@ func (t *Telnet) Connect() error {
 	var hostPort string
 	var err error
 
-	if t.configuration.TelnetMetricsCollector == nil {
+	if !t.metricsEnabled {
 
 		hostPort, err = t.resolveServerAddress()
 
@@ -164,7 +174,7 @@ func (t *Telnet) Connect() error {
 		return err
 	}
 
-	if t.configuration.TelnetMetricsCollector == nil {
+	if !t.metricsEnabled {
 
 		err = t.dial()
 
@@ -218,7 +228,7 @@ func (t *Telnet) Close() {
 
 	var err error
 
-	if t.configuration.TelnetMetricsCollector == nil {
+	if !t.metricsEnabled {
 
 		err = t.connection.Close()
 
@@ -251,7 +261,7 @@ func (t *Telnet) send(command ...[]byte) error {
 	innerLoop:
 		for i := 0; i < t.configuration.MaxWriteRetries; i++ {
 
-			if t.configuration.TelnetMetricsCollector == nil {
+			if !t.metricsEnabled {
 
 				wrote = t.writePayload(c)
 
@@ -293,7 +303,7 @@ func (t *Telnet) Send(command ...[]byte) error {
 
 	var err error
 
-	if t.configuration.TelnetMetricsCollector == nil {
+	if !t.metricsEnabled {
 
 		err = t.send(command...)
 
@@ -360,7 +370,7 @@ func (t *Telnet) Read(endConnInput [][]byte) ([]byte, error) {
 	var res []byte
 	var err error
 
-	if t.configuration.TelnetMetricsCollector == nil {
+	if !t.metricsEnabled {
 
 		res, err = t.read(endConnInput)
 

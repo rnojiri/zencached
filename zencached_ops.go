@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strconv"
+	"sync/atomic"
 	"time"
 )
 
@@ -42,6 +43,12 @@ var (
 	mcrGetCheckEndResponseSet   memcachedResponseSet = memcachedResponseSet{mcrValue, mcrEnd}
 	mcrDeletedResponseSet       memcachedResponseSet = memcachedResponseSet{mcrDeleted, mcrNotFound}
 	mcrVersionResponseSet       memcachedResponseSet = memcachedResponseSet{mcrVersion}
+
+	errNoResourceAvailable cmdResponse = cmdResponse{
+		exists:   false,
+		response: nil,
+		err:      ErrNoAvailableResources,
+	}
 )
 
 // MemcachedCommand type
@@ -115,9 +122,21 @@ func (z *Zencached) store(cmd MemcachedCommand, routerHash, path, key, value []b
 
 func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 
+	usedResources := atomic.LoadUint32(&nw.numUsedResources)
+
+	if usedResources >= nw.configuration.CommandExecutionBufferSize {
+		return errNoResourceAvailable
+	}
+
+	atomic.StoreUint32(&nw.numUsedResources, usedResources+1)
+
+	defer func() {
+		atomic.StoreUint32(&nw.numUsedResources, atomic.LoadUint32(&nw.numUsedResources)-1)
+	}()
+
 	var result cmdResponse
 
-	if z.configuration.ZencachedMetricsCollector == nil {
+	if !z.metricsEnabled {
 
 		nw.jobs <- job
 		result = <-job.response

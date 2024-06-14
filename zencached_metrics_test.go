@@ -122,7 +122,7 @@ func (ts *zencachedMetricsTestSuite) SetupSuite() {
 
 	ts.instance, ts.config, err = createZencached(
 		[]zencached.Node{{Host: ts.memcachedHost, Port: memcachedMetricsPodPort}},
-		false,
+		10, false,
 		ts.metrics, ts.telnetMetrics,
 	)
 	if err != nil {
