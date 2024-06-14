@@ -96,6 +96,6 @@ type TelnetMetricsCollector interface {
 
 type ZError interface {
 	error
-	Code() uint8
+	Code() ErrorType
 	String() string
 }
