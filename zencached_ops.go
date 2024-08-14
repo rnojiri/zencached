@@ -120,6 +120,15 @@ func (z *Zencached) store(cmd MemcachedCommand, routerHash, path, key, value []b
 	return z.baseStore(nw, cmd, path, key, value, ttl)
 }
 
+func (z *Zencached) atomicStoreNumResources(nw *nodeWorkers, val uint32) {
+
+	atomic.StoreUint32(&nw.numUsedResources, val)
+
+	if z.metricsEnabled {
+		z.configuration.ZencachedMetricsCollector.NumResourcesChangeEvent(nw.node.Host, atomic.LoadUint32(&nw.numUsedResources))
+	}
+}
+
 func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 
 	usedResources := atomic.LoadUint32(&nw.numUsedResources)
@@ -128,10 +137,10 @@ func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 		return errNoResourceAvailable
 	}
 
-	atomic.StoreUint32(&nw.numUsedResources, usedResources+1)
+	z.atomicStoreNumResources(nw, usedResources+1)
 
 	defer func() {
-		atomic.StoreUint32(&nw.numUsedResources, atomic.LoadUint32(&nw.numUsedResources)-1)
+		z.atomicStoreNumResources(nw, atomic.LoadUint32(&nw.numUsedResources)-1)
 	}()
 
 	var result cmdResponse

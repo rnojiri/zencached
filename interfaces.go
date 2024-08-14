@@ -70,6 +70,9 @@ type ZencachedMetricsCollector interface {
 
 	// NodeRebalanceElapsedTime - signalizes a node rebalance event
 	NodeRebalanceElapsedTime(elapsedTime int64)
+
+	// NumResourcesChangeEvent - signalizes a node rebalance event
+	NumResourcesChangeEvent(node string, numResources uint32)
 }
 
 // TelnetMetricsCollector - the interface to collect metrics from telnet
