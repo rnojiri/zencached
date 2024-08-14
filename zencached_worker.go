@@ -98,7 +98,7 @@ func (z *Zencached) createNodeWorker(node Node, rebalanceChannel chan<- struct{}
 		node:             node,
 		connected:        1,
 		numUsedResources: 0,
-		jobs:             make(chan cmdJob, z.configuration.CommandExecutionBufferSize+1),
+		jobs:             make(chan cmdJob, z.configuration.CommandExecutionBufferSize),
 		configuration:    z.configuration,
 		rebalanceChannel: rebalanceChannel,
 	}

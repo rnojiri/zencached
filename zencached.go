@@ -238,6 +238,11 @@ func (z *Zencached) rebalance() {
 			z.logger.Warn().Msg("no available nodes found to connect")
 		}
 		atomic.StoreUint32(&z.notAvailable, 1)
+
+		go func() {
+			<-time.After(z.configuration.NodeListRetryTimeout)
+			z.Rebalance()
+		}()
 	} else {
 		atomic.StoreUint32(&z.notAvailable, 0)
 	}
