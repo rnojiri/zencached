@@ -26,6 +26,7 @@ type metricsCollector struct {
 	numNodeListingError            int
 	numNodeListingElapsedTime      int
 	numNodeRebalanceElapsedTime    int
+	numResourcesChangeEvent        int
 }
 
 // CommandExecutionElapsedTime - command execution elapsed time
@@ -82,6 +83,11 @@ func (mc *metricsCollector) NodeRebalanceElapsedTime(elapsedTime int64) {
 	mc.numNodeRebalanceElapsedTime++
 }
 
+func (mc *metricsCollector) NumResourcesChangeEvent(node string, numResources uint32) {
+
+	mc.numResourcesChangeEvent++
+}
+
 func (mc *metricsCollector) reset() {
 
 	mc.numCommandExecutionElapsedTime = 0
@@ -94,6 +100,7 @@ func (mc *metricsCollector) reset() {
 	mc.numNodeListingError = 0
 	mc.numNodeListingElapsedTime = 0
 	mc.numNodeRebalanceElapsedTime = 0
+	mc.numResourcesChangeEvent = 0
 }
 
 type zencachedMetricsTestSuite struct {
@@ -152,6 +159,7 @@ func (ts *zencachedMetricsTestSuite) TestCommandExecutionEvents() {
 
 	ts.Equal(4, ts.metrics.numCommandExecution, "expects four command execution events")
 	ts.Equal(4, ts.metrics.numCommandExecutionElapsedTime, "expects four command execution time measurements")
+	ts.Equal(8, ts.metrics.numResourcesChangeEvent, "expected eight events changing the number of resources")
 	ts.Equal(0, ts.telnetMetrics.numResolveAddressElapsedTime, "expected a resolve address event")
 	ts.Equal(0, ts.telnetMetrics.numDialElapsedTime, "expected a dial event")
 	ts.Equal(4, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
@@ -167,6 +175,7 @@ func (ts *zencachedMetricsTestSuite) TestCacheMissEvents() {
 	ts.instance.ClusterGet([]byte("path3"), []byte("key3"))
 
 	ts.Equal(3, ts.metrics.numCacheMissEvent, "expects three cache miss events")
+	ts.Equal(6, ts.metrics.numResourcesChangeEvent, "expected six events changing the number of resources")
 	ts.Equal(3, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
 	ts.Equal(3, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
 	ts.Equal(3, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
@@ -181,6 +190,7 @@ func (ts *zencachedMetricsTestSuite) TestCacheHitEvents() {
 	ts.instance.Delete(nil, []byte("path1"), []byte("key1"))
 
 	ts.Equal(3, ts.metrics.numCacheHitEvent, "expects two cache hit events")
+	ts.Equal(8, ts.metrics.numResourcesChangeEvent, "expected eight events changing the number of resources")
 	ts.Equal(4, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
 	ts.Equal(4, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
 	ts.Equal(4, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
@@ -201,6 +211,7 @@ func (ts *zencachedMetricsTestSuite) TestZ1CommandExecutionError() {
 	ts.instance.Delete(nil, []byte("path1"), []byte("key1"))
 
 	ts.Equal(4, ts.metrics.numCommandExecutionError, "expects four command execution error events")
+	ts.Equal(8, ts.metrics.numResourcesChangeEvent, "expected eight events changing the number of resources")
 	ts.Equal(4, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
 	ts.Equal(4, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
 	ts.Equal(4, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
