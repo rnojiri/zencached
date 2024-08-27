@@ -56,7 +56,7 @@ func isDisconnectionError(t *testing.T, err error) bool {
 		errors.Is(err, zencached.ErrNoAvailableConnections) ||
 		errors.Is(err, zencached.ErrNoAvailableNodes) ||
 		errors.Is(err, zencached.ErrTelnetConnectionIsClosed),
-		fmt.Sprintf("expected a disconnection error, instead: %s", err),
+		fmt.Sprintf("expected a disconnection error, instead: %v", err),
 	)
 }
 
@@ -291,7 +291,7 @@ func TestMaxConnectionRetryError(t *testing.T) {
 	defer dockerh.Remove(newPodName)
 
 	_, _, err = instance.Get(nil, []byte("p"), []byte("k"))
-	if !isDisconnectionError(t, err) {
+	if err != nil && !isDisconnectionError(t, err) {
 		return
 	}
 
