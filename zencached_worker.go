@@ -26,8 +26,8 @@ type cmdJob struct {
 
 type nodeWorkers struct {
 	logger           *logh.ContextualLogger
-	connected        uint32
-	numUsedResources uint32
+	connected        atomic.Bool
+	resources        *resourceChannel
 	node             Node
 	jobs             chan cmdJob
 	rebalanceChannel chan<- struct{}
@@ -62,6 +62,12 @@ func (nw *nodeWorkers) NewTelnetFromNode() (*Telnet, error) {
 func (nw *nodeWorkers) terminate() {
 
 	close(nw.jobs)
+	nw.resources.terminate()
+}
+
+func (nw *nodeWorkers) sendNodeTimedMetrics() {
+
+	nw.configuration.ZencachedMetricsCollector.NumResourcesChangeEvent(nw.node.Host, uint32(nw.resources.numAvailableResources()))
 }
 
 func (nw *nodeWorkers) work(telnetConn *Telnet, workerID int) {
@@ -83,7 +89,8 @@ func (nw *nodeWorkers) work(telnetConn *Telnet, workerID int) {
 		}
 	}
 
-	atomic.StoreUint32(&nw.connected, 0)
+	nw.connected.Store(false)
+
 	telnetConn.Close()
 
 	if logh.InfoEnabled {
@@ -96,12 +103,14 @@ func (z *Zencached) createNodeWorker(node Node, rebalanceChannel chan<- struct{}
 	nw := &nodeWorkers{
 		logger:           logh.CreateContextualLogger("pkg", "zencached", "node", node.String()),
 		node:             node,
-		connected:        1,
-		numUsedResources: 0,
+		connected:        atomic.Bool{},
+		resources:        newResource(z.configuration.CommandExecutionBufferSize),
 		jobs:             make(chan cmdJob, z.configuration.CommandExecutionBufferSize),
 		configuration:    z.configuration,
 		rebalanceChannel: rebalanceChannel,
 	}
+
+	nw.connected.Store(true)
 
 	for i := 0; i < int(z.configuration.NumConnectionsPerNode); i++ {
 
@@ -120,7 +129,7 @@ func (z *Zencached) createNodeWorker(node Node, rebalanceChannel chan<- struct{}
 // GetNodeWorkersByIndex - returns a telnet connection by node index
 func (z *Zencached) GetNodeWorkersByIndex(index int) (nw *nodeWorkers, err error) {
 
-	if atomic.LoadUint32(&z.nodeWorkerArray[index].connected) == 0 {
+	if !z.nodeWorkerArray[index].connected.Load() {
 		return nil, ErrTelnetConnectionIsClosed
 	}
 
@@ -130,7 +139,7 @@ func (z *Zencached) GetNodeWorkersByIndex(index int) (nw *nodeWorkers, err error
 // GetConnectedNodeWorkers - returns an idle telnet connection
 func (z *Zencached) GetConnectedNodeWorkers(routerHash, path, key []byte) (nw *nodeWorkers, index int, err error) {
 
-	if atomic.LoadUint32(&z.notAvailable) == 1 {
+	if z.notAvailable.Load() {
 		return nil, 0, ErrNoAvailableNodes
 	}
 

@@ -49,13 +49,14 @@ func createZencached(nodes []zencached.Node, commandExecutionBufferSize uint32, 
 
 	c := &zencached.Configuration{
 		Nodes:                      nodes,
-		NumConnectionsPerNode:      3,
+		NumConnectionsPerNode:      1,
 		TelnetConfiguration:        *createTelnetConf(telnetMetricsCollector),
 		ZencachedMetricsCollector:  metricCollector,
 		RebalanceOnDisconnection:   rebalanceOnDisconnection,
-		NumNodeListRetries:         10,
-		NodeListRetryTimeout:       5 * time.Second,
+		NumNodeListRetries:         3,
+		NodeListRetryTimeout:       2 * time.Second,
 		CommandExecutionBufferSize: commandExecutionBufferSize,
+		DisableTimedMetrics:        true, // using this to disable the automatic metrics
 	}
 
 	z, err := zencached.New(c)

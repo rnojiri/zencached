@@ -40,6 +40,12 @@ type Configuration struct {
 	// NodeListRetryTimeout - time to wait for node listing retry after an error
 	NodeListRetryTimeout time.Duration
 
+	// TimedMetricsPeriod - send metrics after some period (if metrics are enabled)
+	TimedMetricsPeriod time.Duration
+
+	// DisableTimedMetrics - disables the automatic sending of metrics (if metrics are enabled)
+	DisableTimedMetrics bool
+
 	TelnetConfiguration
 }
 
@@ -54,7 +60,7 @@ func (c *Configuration) setDefaults() {
 	}
 
 	if c.CommandExecutionBufferSize == 0 {
-		c.CommandExecutionBufferSize = 10
+		c.CommandExecutionBufferSize = 100
 	}
 
 	if c.NumNodeListRetries == 0 {
@@ -64,19 +70,24 @@ func (c *Configuration) setDefaults() {
 	if c.NodeListRetryTimeout == 0 {
 		c.NodeListRetryTimeout = time.Second
 	}
+
+	if c.TimedMetricsPeriod == 0 {
+		c.TimedMetricsPeriod = time.Minute
+	}
 }
 
 // Zencached - declares the main structure
 type Zencached struct {
-	configuration    *Configuration
-	logger           *logh.ContextualLogger
-	shuttingDown     uint32
-	rebalanceLock    uint32
-	notAvailable     uint32
-	nodeWorkerArray  []*nodeWorkers
-	connectedNodes   []Node
-	rebalanceChannel chan struct{}
-	metricsEnabled   bool
+	configuration       *Configuration
+	logger              *logh.ContextualLogger
+	shuttingDown        atomic.Bool
+	rebalanceLock       atomic.Bool
+	notAvailable        atomic.Bool
+	nodeWorkerArray     []*nodeWorkers
+	connectedNodes      []Node
+	rebalanceChannel    chan struct{}
+	timedMetricsChannel chan struct{}
+	metricsEnabled      bool
 }
 
 // New - creates a new instance
@@ -85,11 +96,16 @@ func New(configuration *Configuration) (*Zencached, error) {
 	configuration.setDefaults()
 
 	z := &Zencached{
-		nodeWorkerArray:  nil,
-		configuration:    configuration,
-		logger:           logh.CreateContextualLogger("pkg", "zencached"),
-		rebalanceChannel: make(chan struct{}),
-		metricsEnabled:   !interfaceIsNil(configuration.ZencachedMetricsCollector),
+		nodeWorkerArray:     nil,
+		configuration:       configuration,
+		logger:              logh.CreateContextualLogger("pkg", "zencached"),
+		rebalanceChannel:    make(chan struct{}),
+		metricsEnabled:      !interfaceIsNil(configuration.ZencachedMetricsCollector),
+		timedMetricsChannel: make(chan struct{}, 1),
+	}
+
+	if z.metricsEnabled && !z.configuration.DisableTimedMetrics {
+		go z.sendTimedMetrics()
 	}
 
 	z.Rebalance()
@@ -143,15 +159,15 @@ func (z *Zencached) tryListNodes() []Node {
 // rebalance - rebalance all nodes
 func (z *Zencached) rebalance() {
 
-	if atomic.LoadUint32(&z.rebalanceLock) == 1 {
+	if z.rebalanceLock.Load() {
 		if logh.WarnEnabled {
 			z.logger.Warn().Msg("rebalancing already in progress...")
 		}
 		return
 	}
 
-	atomic.StoreUint32(&z.rebalanceLock, 1)
-	defer atomic.StoreUint32(&z.rebalanceLock, 0)
+	z.rebalanceLock.Store(true)
+	defer z.rebalanceLock.Store(false)
 
 	var nodes []Node
 
@@ -183,19 +199,21 @@ func (z *Zencached) rebalance() {
 
 			telnetConn, err := nw.NewTelnetFromNode()
 
-			if atomic.LoadUint32(&nw.connected) == 0 {
+			if !nw.connected.Load() {
 
 				if err != nil {
 					continue
 				}
 
-				atomic.StoreUint32(&nw.connected, 1)
+				nw.connected.Store(true)
+
 				connectedNodeWorkerMap[nodeKey] = nw
 
 			} else {
 
 				if err != nil {
-					atomic.StoreUint32(&nw.connected, 0)
+					nw.connected.Store(false)
+
 					connectedNodeWorkerMap[nodeKey] = nw
 					continue
 				}
@@ -221,7 +239,7 @@ func (z *Zencached) rebalance() {
 
 	for _, nw := range connectedNodeWorkerMap {
 
-		if atomic.LoadUint32(&nw.connected) == 0 {
+		if !nw.connected.Load() {
 			nw.terminate()
 		}
 	}
@@ -237,14 +255,14 @@ func (z *Zencached) rebalance() {
 		if logh.WarnEnabled {
 			z.logger.Warn().Msg("no available nodes found to connect")
 		}
-		atomic.StoreUint32(&z.notAvailable, 1)
+		z.notAvailable.Store(true)
 
 		go func() {
 			<-time.After(z.configuration.NodeListRetryTimeout)
 			z.Rebalance()
 		}()
 	} else {
-		atomic.StoreUint32(&z.notAvailable, 0)
+		z.notAvailable.Store(false)
 	}
 }
 
@@ -281,7 +299,7 @@ func (z *Zencached) rebalanceWorker() {
 // Shutdown - closes all connections
 func (z *Zencached) Shutdown() {
 
-	if atomic.LoadUint32(&z.shuttingDown) == 1 {
+	if z.shuttingDown.Load() {
 		if logh.InfoEnabled {
 			z.logger.Info().Msg("already shutting down...")
 		}
@@ -292,7 +310,7 @@ func (z *Zencached) Shutdown() {
 		z.logger.Info().Msg("shutting down...")
 	}
 
-	atomic.SwapUint32(&z.shuttingDown, 1)
+	z.shuttingDown.Store(true)
 
 	for ni, nw := range z.nodeWorkerArray {
 
@@ -313,4 +331,31 @@ func (z *Zencached) GetConnectedNodes() []Node {
 	copy(c, z.connectedNodes)
 
 	return c
+}
+
+func (z *Zencached) sendTimedMetrics() {
+
+	for {
+
+		select {
+
+		case <-time.After(z.configuration.TimedMetricsPeriod):
+			z.SendTimedMetrics()
+
+		case <-z.timedMetricsChannel:
+			return
+
+		default:
+			<-time.After(z.configuration.TimedMetricsPeriod / 2)
+		}
+	}
+}
+
+func (z *Zencached) SendTimedMetrics() {
+
+	if len(z.nodeWorkerArray) > 0 {
+		for _, nw := range z.nodeWorkerArray {
+			nw.sendNodeTimedMetrics()
+		}
+	}
 }
