@@ -1,10 +1,7 @@
 package zencached
 
-import "sync/atomic"
-
 type resourceChannel struct {
-	channel      chan struct{}
-	numAvailable atomic.Uint32
+	channel chan struct{}
 }
 
 func newResource(numResources uint32) *resourceChannel {
@@ -16,8 +13,7 @@ func newResource(numResources uint32) *resourceChannel {
 	}
 
 	return &resourceChannel{
-		channel:      r,
-		numAvailable: atomic.Uint32{},
+		channel: r,
 	}
 }
 
@@ -25,7 +21,6 @@ func (r *resourceChannel) take() bool {
 
 	select {
 	case <-r.channel:
-		r.numAvailable.Add(^uint32(0))
 		return true
 	default:
 		return false
@@ -35,16 +30,14 @@ func (r *resourceChannel) take() bool {
 func (r *resourceChannel) put() {
 
 	r.channel <- struct{}{}
-	r.numAvailable.Add(1)
 }
 
 func (r *resourceChannel) terminate() {
 
 	close(r.channel)
-	r.numAvailable.Store(0)
 }
 
 func (r *resourceChannel) numAvailableResources() uint32 {
 
-	return r.numAvailable.Load()
+	return uint32(len(r.channel))
 }
