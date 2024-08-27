@@ -78,16 +78,16 @@ func (c *Configuration) setDefaults() {
 
 // Zencached - declares the main structure
 type Zencached struct {
-	configuration       *Configuration
-	logger              *logh.ContextualLogger
-	shuttingDown        atomic.Bool
-	rebalanceLock       atomic.Bool
-	notAvailable        atomic.Bool
-	nodeWorkerArray     []*nodeWorkers
-	connectedNodes      []Node
-	rebalanceChannel    chan struct{}
-	timedMetricsChannel chan struct{}
-	metricsEnabled      bool
+	configuration            *Configuration
+	logger                   *logh.ContextualLogger
+	shuttingDown             atomic.Bool
+	rebalanceLock            atomic.Bool
+	notAvailable             atomic.Bool
+	nodeWorkerArray          []*nodeWorkers
+	connectedNodes           []Node
+	rebalanceChannel         chan struct{}
+	closeTimedMetricsChannel chan struct{}
+	metricsEnabled           bool
 }
 
 // New - creates a new instance
@@ -96,12 +96,12 @@ func New(configuration *Configuration) (*Zencached, error) {
 	configuration.setDefaults()
 
 	z := &Zencached{
-		nodeWorkerArray:     nil,
-		configuration:       configuration,
-		logger:              logh.CreateContextualLogger("pkg", "zencached"),
-		rebalanceChannel:    make(chan struct{}),
-		metricsEnabled:      !interfaceIsNil(configuration.ZencachedMetricsCollector),
-		timedMetricsChannel: make(chan struct{}, 1),
+		nodeWorkerArray:          nil,
+		configuration:            configuration,
+		logger:                   logh.CreateContextualLogger("pkg", "zencached"),
+		rebalanceChannel:         make(chan struct{}),
+		metricsEnabled:           !interfaceIsNil(configuration.ZencachedMetricsCollector),
+		closeTimedMetricsChannel: make(chan struct{}, 1),
 	}
 
 	if z.metricsEnabled && !z.configuration.DisableTimedMetrics {
@@ -310,6 +310,8 @@ func (z *Zencached) Shutdown() {
 		z.logger.Info().Msg("shutting down...")
 	}
 
+	z.closeTimedMetricsChannel <- struct{}{}
+
 	z.shuttingDown.Store(true)
 
 	for ni, nw := range z.nodeWorkerArray {
@@ -335,17 +337,20 @@ func (z *Zencached) GetConnectedNodes() []Node {
 
 func (z *Zencached) sendTimedMetrics() {
 
-	timer := time.NewTimer(z.configuration.TimedMetricsPeriod)
+	ticker := time.NewTicker(z.configuration.TimedMetricsPeriod)
 
 	for {
 
 		select {
 
-		case <-timer.C:
+		case <-ticker.C:
 			z.SendTimedMetrics()
-			timer.Reset(z.configuration.TimedMetricsPeriod)
 
-		case <-z.timedMetricsChannel:
+		case <-z.closeTimedMetricsChannel:
+			if logh.InfoEnabled {
+				z.logger.Info().Msg("terminating timed metrics loop...")
+			}
+			ticker.Stop()
 			return
 
 		default:
@@ -357,6 +362,11 @@ func (z *Zencached) sendTimedMetrics() {
 func (z *Zencached) SendTimedMetrics() {
 
 	if len(z.nodeWorkerArray) > 0 {
+
+		if logh.DebugEnabled {
+			z.logger.Debug().Msg("sending timed metrics")
+		}
+
 		for _, nw := range z.nodeWorkerArray {
 			nw.sendNodeTimedMetrics()
 		}
