@@ -343,6 +343,7 @@ func (z *Zencached) sendTimedMetrics() {
 
 		case <-timer.C:
 			z.SendTimedMetrics()
+			timer.Reset(z.configuration.TimedMetricsPeriod)
 
 		case <-z.timedMetricsChannel:
 			return
