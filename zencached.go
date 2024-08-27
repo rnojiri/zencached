@@ -335,11 +335,13 @@ func (z *Zencached) GetConnectedNodes() []Node {
 
 func (z *Zencached) sendTimedMetrics() {
 
+	timer := time.NewTimer(z.configuration.TimedMetricsPeriod)
+
 	for {
 
 		select {
 
-		case <-time.After(z.configuration.TimedMetricsPeriod):
+		case <-timer.C:
 			z.SendTimedMetrics()
 
 		case <-z.timedMetricsChannel:
