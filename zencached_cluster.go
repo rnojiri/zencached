@@ -6,23 +6,23 @@ package zencached
 //
 
 // ClusterSet - performs an full set operation operation
-func (z *Zencached) ClusterSet(path, key, value []byte, ttl uint64) ([]bool, []error) {
+func (z *Zencached) ClusterSet(path, key, value []byte, ttl uint64) ([]*OperationResult, []error) {
 
 	return z.clusterStore(Set, path, key, value, ttl)
 }
 
 // ClusterAdd - performs an full add operation operation
-func (z *Zencached) ClusterAdd(path, key, value []byte, ttl uint64) ([]bool, []error) {
+func (z *Zencached) ClusterAdd(path, key, value []byte, ttl uint64) ([]*OperationResult, []error) {
 
 	return z.clusterStore(Add, path, key, value, ttl)
 }
 
 // clusterStore - performs an full storage operation operation
-func (z *Zencached) clusterStore(cmd MemcachedCommand, path, key, value []byte, ttl uint64) ([]bool, []error) {
+func (z *Zencached) clusterStore(cmd MemcachedCommand, path, key, value []byte, ttl uint64) ([]*OperationResult, []error) {
 
 	numNodes := len(z.nodeWorkerArray)
 
-	stored := make([]bool, numNodes)
+	results := make([]*OperationResult, numNodes)
 	errors := make([]error, numNodes)
 
 	for i := 0; i < numNodes; i++ {
@@ -33,19 +33,18 @@ func (z *Zencached) clusterStore(cmd MemcachedCommand, path, key, value []byte, 
 			continue
 		}
 
-		stored[i], errors[i] = z.baseStore(nw, cmd, path, key, value, ttl)
+		results[i], errors[i] = z.baseStore(nw, cmd, path, key, value, ttl)
 	}
 
-	return stored, errors
+	return results, errors
 }
 
 // ClusterGet - returns a full replicated key stored in the cluster
-func (z *Zencached) ClusterGet(path, key []byte) ([][]byte, []bool, []error) {
+func (z *Zencached) ClusterGet(path, key []byte) ([]*OperationResult, []error) {
 
 	numNodes := len(z.nodeWorkerArray)
 
-	values := make([][]byte, numNodes)
-	exists := make([]bool, numNodes)
+	results := make([]*OperationResult, numNodes)
 	errors := make([]error, numNodes)
 
 	for i := 0; i < numNodes; i++ {
@@ -56,18 +55,18 @@ func (z *Zencached) ClusterGet(path, key []byte) ([][]byte, []bool, []error) {
 			continue
 		}
 
-		values[i], exists[i], errors[i] = z.baseGet(nw, path, key)
+		results[i], errors[i] = z.baseGet(nw, path, key)
 	}
 
-	return values, exists, errors
+	return results, errors
 }
 
 // ClusterDelete - deletes a key from all cluster nodes
-func (z *Zencached) ClusterDelete(path, key []byte) ([]bool, []error) {
+func (z *Zencached) ClusterDelete(path, key []byte) ([]*OperationResult, []error) {
 
 	numNodes := len(z.nodeWorkerArray)
 
-	deleted := make([]bool, numNodes)
+	results := make([]*OperationResult, numNodes)
 	errors := make([]error, numNodes)
 
 	for i := 0; i < numNodes; i++ {
@@ -78,8 +77,8 @@ func (z *Zencached) ClusterDelete(path, key []byte) ([]bool, []error) {
 			continue
 		}
 
-		deleted[i], errors[i] = z.baseDelete(nw, path, key)
+		results[i], errors[i] = z.baseDelete(nw, path, key)
 	}
 
-	return deleted, errors
+	return results, errors
 }

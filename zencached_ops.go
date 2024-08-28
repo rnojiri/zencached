@@ -22,6 +22,19 @@ const (
 	zero        byte = '0'
 )
 
+// OperationResult - default operation results with metadata
+type OperationResult struct {
+
+	// Exists - returns if the data was already stored
+	Exists bool
+
+	// Data - the key content in bytes
+	Data []byte
+
+	// Node - node metadata
+	Node Node
+}
+
 type memcachedResponseSet [][]byte
 
 // memcached responses
@@ -97,23 +110,23 @@ func (z *Zencached) renderStoreCmd(cmd MemcachedCommand, path, key, value []byte
 }
 
 // Set - performs an storage set operation
-func (z *Zencached) Set(routerHash, path, key, value []byte, ttl uint64) (bool, error) {
+func (z *Zencached) Set(routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error) {
 
 	return z.store(Set, routerHash, path, key, value, ttl)
 }
 
 // Add - performs an storage add operation
-func (z *Zencached) Add(routerHash, path, key, value []byte, ttl uint64) (bool, error) {
+func (z *Zencached) Add(routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error) {
 
 	return z.store(Add, routerHash, path, key, value, ttl)
 }
 
 // store - generic store
-func (z *Zencached) store(cmd MemcachedCommand, routerHash, path, key, value []byte, ttl uint64) (bool, error) {
+func (z *Zencached) store(cmd MemcachedCommand, routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error) {
 
 	nw, _, err := z.GetConnectedNodeWorkers(routerHash, path, key)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	return z.baseStore(nw, cmd, path, key, value, ttl)
@@ -173,7 +186,7 @@ func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 }
 
 // baseStore - base storage function
-func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, value []byte, ttl uint64) (bool, error) {
+func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, value []byte, ttl uint64) (*OperationResult, error) {
 
 	job := cmdJob{
 		cmd:                  cmd,
@@ -187,8 +200,14 @@ func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, 
 	}
 
 	result := z.addJobAndWait(nw, job)
+	if result.err != nil {
+		return nil, result.err
+	}
 
-	return result.exists, result.err
+	return &OperationResult{
+		Exists: result.exists,
+		Node:   nw.node,
+	}, nil
 }
 
 // renderKeyOnlyCmd - like Sprintf, but in bytes
@@ -206,11 +225,11 @@ func (z *Zencached) renderKeyOnlyCmd(cmd MemcachedCommand, path, key []byte) []b
 }
 
 // Get - performs a get operation
-func (z *Zencached) Get(routerHash, path, key []byte) ([]byte, bool, error) {
+func (z *Zencached) Get(routerHash, path, key []byte) (*OperationResult, error) {
 
 	nw, _, err := z.GetConnectedNodeWorkers(routerHash, path, key)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	return z.baseGet(nw, path, key)
@@ -243,7 +262,7 @@ func (z *Zencached) extractGetCmdValue(response []byte) (start, end int, err err
 }
 
 // baseGet - performs a get operation
-func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) ([]byte, bool, error) {
+func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult, error) {
 
 	job := cmdJob{
 		cmd:                  Get,
@@ -257,32 +276,42 @@ func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) ([]byte, bool, er
 	}
 
 	result := z.addJobAndWait(nw, job)
+	if result.err != nil {
+		return nil, result.err
+	}
 
-	if !result.exists || result.err != nil {
-		return nil, false, result.err
+	if !result.exists {
+		return &OperationResult{
+			Exists: false,
+			Node:   nw.node,
+		}, nil
 	}
 
 	start, end, err := z.extractGetCmdValue([]byte(result.response))
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
-	return result.response[start:end], true, nil
+	return &OperationResult{
+		Exists: true,
+		Data:   result.response[start:end],
+		Node:   nw.node,
+	}, nil
 }
 
 // Delete - performs a delete operation
-func (z *Zencached) Delete(routerHash, path, key []byte) (bool, error) {
+func (z *Zencached) Delete(routerHash, path, key []byte) (*OperationResult, error) {
 
 	nw, _, err := z.GetConnectedNodeWorkers(routerHash, path, key)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	return z.baseDelete(nw, path, key)
 }
 
 // baseDelete - performs a delete operation
-func (z *Zencached) baseDelete(nw *nodeWorkers, path, key []byte) (bool, error) {
+func (z *Zencached) baseDelete(nw *nodeWorkers, path, key []byte) (*OperationResult, error) {
 
 	job := cmdJob{
 		cmd:                  Delete,
@@ -296,8 +325,14 @@ func (z *Zencached) baseDelete(nw *nodeWorkers, path, key []byte) (bool, error) 
 	}
 
 	result := z.addJobAndWait(nw, job)
+	if result.err != nil {
+		return nil, result.err
+	}
 
-	return result.exists, result.err
+	return &OperationResult{
+		Exists: result.exists,
+		Node:   nw.node,
+	}, nil
 }
 
 // renderNoParameterCmd - like Sprintf, but in bytes
@@ -332,7 +367,7 @@ func (z *Zencached) extractVersionCmdValue(response []byte) (start, end int, err
 }
 
 // Version - performs a version operation
-func (z *Zencached) Version(routerHash []byte) ([]byte, error) {
+func (z *Zencached) Version(routerHash []byte) (*OperationResult, error) {
 
 	nw, _, err := z.GetConnectedNodeWorkers(routerHash, nil, nil)
 	if err != nil {
@@ -343,7 +378,7 @@ func (z *Zencached) Version(routerHash []byte) ([]byte, error) {
 }
 
 // baseVersion - performs a get operation
-func (z *Zencached) baseVersion(nw *nodeWorkers) ([]byte, error) {
+func (z *Zencached) baseVersion(nw *nodeWorkers) (*OperationResult, error) {
 
 	job := cmdJob{
 		cmd:                  Version,
@@ -355,9 +390,15 @@ func (z *Zencached) baseVersion(nw *nodeWorkers) ([]byte, error) {
 	}
 
 	result := z.addJobAndWait(nw, job)
-
-	if !result.exists || result.err != nil {
+	if result.err != nil {
 		return nil, result.err
+	}
+
+	if !result.exists {
+		return &OperationResult{
+			Exists: false,
+			Node:   nw.node,
+		}, nil
 	}
 
 	start, end, err := z.extractVersionCmdValue([]byte(result.response))
@@ -365,5 +406,9 @@ func (z *Zencached) baseVersion(nw *nodeWorkers) ([]byte, error) {
 		return nil, err
 	}
 
-	return result.response[start:end], nil
+	return &OperationResult{
+		Exists: true,
+		Data:   result.response[start:end],
+		Node:   nw.node,
+	}, nil
 }

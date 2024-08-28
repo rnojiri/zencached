@@ -11,18 +11,19 @@ func (ts *zencachedTestSuite) TestClusterSetCommand() {
 	key := []byte("cluster-storage")
 	value := []byte("cluster-value-storage")
 
-	stored, errors := ts.instance.ClusterSet(path, key, value, defaultTTL)
+	results, errors := ts.instance.ClusterSet(path, key, value, defaultTTL)
 
-	if !ts.Len(stored, numNodes, "wrong number of nodes") {
+	if !ts.Len(results, numNodes, "wrong number of nodes") {
 		return
 	}
 
 	for i := 0; i < numNodes; i++ {
+
 		if !ts.NoErrorf(errors[i], "unexpected error on node: %d", i) {
 			return
 		}
 
-		if !ts.Truef(stored[i], "expected storage on node: %d", i) {
+		if !ts.Truef(results[i].Exists, "expected storage on node: %d", i) {
 			return
 		}
 
@@ -33,6 +34,10 @@ func (ts *zencachedTestSuite) TestClusterSetCommand() {
 
 		t, err := nw.NewTelnetFromNode()
 		if !ts.NoError(err, "expected no error creating telnet connection") {
+			return
+		}
+
+		if !ts.Equal(t.GetNode(), results[i].Node, "expected same node") {
 			return
 		}
 
@@ -58,6 +63,7 @@ func (ts *zencachedTestSuite) TestClusterSetCommand() {
 func (ts *zencachedTestSuite) rawSetKeyOnAllNodes(path, key, value string) {
 
 	for i := 0; i < numNodes; i++ {
+
 		nw, err := ts.instance.GetNodeWorkersByIndex(i)
 		if !ts.NoError(err, "expects no error getting a connection") {
 			return
@@ -85,7 +91,7 @@ func (ts *zencachedTestSuite) TestClusterGetCommand() {
 
 	for i := 0; i < 1000; i++ {
 
-		values, exists, errs := ts.instance.ClusterGet([]byte(path), []byte(key))
+		results, errs := ts.instance.ClusterGet([]byte(path), []byte(key))
 
 		for i := 0; i < numNodes; i++ {
 
@@ -93,11 +99,11 @@ func (ts *zencachedTestSuite) TestClusterGetCommand() {
 				return
 			}
 
-			if !ts.Truef(exists[i], "expected value to be stored on cluster get: %d", i) {
+			if !ts.Truef(results[i].Exists, "expected value to be stored on cluster get: %d", i) {
 				return
 			}
 
-			if !ts.Equalf([]byte(value), values[i], "expected the same value stored", i) {
+			if !ts.Equalf([]byte(value), results[i].Data, "expected the same value stored", i) {
 				return
 			}
 		}
@@ -113,9 +119,9 @@ func (ts *zencachedTestSuite) TestClusterDeleteCommand() {
 
 	ts.rawSetKeyOnAllNodes(path, key, value)
 
-	stored, errors := ts.instance.ClusterDelete([]byte(path), []byte(key))
+	results, errors := ts.instance.ClusterDelete([]byte(path), []byte(key))
 
-	if !ts.Len(stored, numNodes, "wrong number of nodes") {
+	if !ts.Len(results, numNodes, "wrong number of nodes") {
 		return
 	}
 
@@ -125,7 +131,7 @@ func (ts *zencachedTestSuite) TestClusterDeleteCommand() {
 			return
 		}
 
-		if !ts.Truef(stored[i], "expected delete on node: %d", i) {
+		if !ts.Truef(results[i].Exists, "expected delete on node: %d", i) {
 			return
 		}
 
@@ -136,6 +142,10 @@ func (ts *zencachedTestSuite) TestClusterDeleteCommand() {
 
 		t, err := nw.NewTelnetFromNode()
 		if !ts.NoError(err, "expected no error creating telnet connection") {
+			return
+		}
+
+		if !ts.Equal(t.GetNode(), results[i].Node, "expected same node") {
 			return
 		}
 

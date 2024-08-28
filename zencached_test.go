@@ -106,12 +106,12 @@ func (ts *zencachedTestSuite) TestAddCommand() {
 
 	f := func(route []byte, path, key, value string, expectedStored bool, testIndex int) {
 
-		stored, err := ts.instance.Add(route, []byte(path), []byte(key), []byte(value), defaultTTL)
+		result, err := ts.instance.Add(route, []byte(path), []byte(key), []byte(value), defaultTTL)
 		if !ts.NoError(err, "expected no error storing key") {
 			return
 		}
 
-		ts.Truef(expectedStored == stored, "unexpected storage status for test %d and key %s", testIndex, key)
+		ts.Truef(expectedStored == result.Exists, "unexpected storage status for test %d and key %s", testIndex, key)
 	}
 
 	f([]byte{3}, "path", "test1", "test1", true, 1)
@@ -160,16 +160,16 @@ func (ts *zencachedTestSuite) TestGetCommand() {
 
 		ts.rawSetKey(t, path, key, value)
 
-		response, found, err := ts.instance.Get(route, []byte(path), []byte(key))
+		result, err := ts.instance.Get(route, []byte(path), []byte(key))
 		if !ts.NoError(err, "expected no error storing key") {
 			return
 		}
 
-		if !ts.Truef(found, "expected value from key \"%s\" to be found on test %d", key, testIndex) {
+		if !ts.Truef(result.Exists, "expected value from key \"%s\" to be found on test %d", key, testIndex) {
 			return
 		}
 
-		ts.Equal([]byte(value), response, "expected values to be equal")
+		ts.Equal([]byte(value), result.Data, "expected values to be equal")
 	}
 
 	f([]byte{3}, "path", "test1", "test1", 1)
@@ -188,25 +188,25 @@ func (ts *zencachedTestSuite) TestSetCommand() {
 
 	f := func(route []byte, path, key, value string, testIndex int) {
 
-		stored, err := ts.instance.Set(route, []byte(path), []byte(key), []byte(value), defaultTTL)
+		result, err := ts.instance.Set(route, []byte(path), []byte(key), []byte(value), defaultTTL)
 		if !ts.NoError(err, "expected no error storing key") {
 			return
 		}
 
-		if !ts.Truef(stored, "unexpected storage status for test %d", testIndex, key) {
+		if !ts.Truef(result.Exists, "unexpected storage status for test %d", testIndex, key) {
 			return
 		}
 
-		storedValue, found, err := ts.instance.Get(route, []byte(path), []byte(key))
+		result, err = ts.instance.Get(route, []byte(path), []byte(key))
 		if !ts.NoError(err, "expected no error getting key") {
 			return
 		}
 
-		if !ts.Truef(found, "unexpected get status for test %d", testIndex, key) {
+		if !ts.Truef(result.Exists, "unexpected get status for test %d", testIndex, key) {
 			return
 		}
 
-		ts.Equal([]byte(value), storedValue, "expected the same values")
+		ts.Equal([]byte(value), result.Data, "expected the same values")
 	}
 
 	f([]byte{3}, "path", "test1", "test1", 1)
@@ -241,22 +241,22 @@ func (ts *zencachedTestSuite) TestDeleteCommand() {
 			ts.rawSetKey(t, path, key, value)
 		}
 
-		status, err := ts.instance.Delete(route, []byte(path), []byte(key))
+		result, err := ts.instance.Delete(route, []byte(path), []byte(key))
 		if !ts.NoError(err, "expected no error storing key") {
 			return
 		}
 
-		if !ts.Truef(status == setValue, "unexpected delete status for test %d", testIndex, key) {
+		if !ts.Truef(result.Exists == setValue, "unexpected delete status for test %d", testIndex, key) {
 			return
 		}
 
 		if setValue {
-			_, found, err := ts.instance.Get(route, []byte(path), []byte(key))
+			result, err := ts.instance.Get(route, []byte(path), []byte(key))
 			if !ts.NoError(err, "expected no error storing key") {
 				return
 			}
 
-			if !ts.Truef(!found, "unexpected get status for test %d", testIndex, key) {
+			if !ts.Truef(!result.Exists, "unexpected get status for test %d", testIndex, key) {
 				return
 			}
 		}
@@ -298,12 +298,12 @@ func (ts *zencachedTestSuite) TestVersionCommand() {
 		return
 	}
 
-	value, err := ts.instance.Version(nil)
+	result, err := ts.instance.Version(nil)
 	if !ts.NoError(err, "error getting version") {
 		return
 	}
 
-	ts.Equal(strings.Split(strings.TrimSpace(string(payload)), " ")[1], string(value), "expected same version")
+	ts.Equal(strings.Split(strings.TrimSpace(string(payload)), " ")[1], string(result.Data), "expected same version")
 }
 
 func TestZencachedSuite(t *testing.T) {

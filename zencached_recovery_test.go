@@ -71,7 +71,7 @@ func (ts *zencachedRecoveryTestSuite) loopCommands(exitLoop chan struct{}) {
 			path := []byte{'p'}
 			key := []byte(strconv.Itoa(i))
 
-			_, _, err := ts.instance.Get(nil, path, key)
+			_, err := ts.instance.Get(nil, path, key)
 			if err != nil && !isDisconnectionError(ts.T(), err) {
 				return
 			}
@@ -179,7 +179,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceAddingNode() {
 // TestClusterNodeDown - tests the cluster  recovery when a node is down
 func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 
-	_, _, err := ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
+	_, err := ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
 	if !ts.NoError(err, "expected no error executing get in node zero") {
 		return
 	}
@@ -189,7 +189,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 		return
 	}
 
-	_, _, err = ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
+	_, err = ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
 	if !isDisconnectionError(ts.T(), err) {
 		return
 	}
@@ -205,7 +205,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 
 	for i := 0; i < 3; i++ {
 
-		_, _, err = ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
+		_, err = ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
 		if err == nil {
 			reconnected = true
 			break
@@ -222,7 +222,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 // TestClusterAllNodesDown - tests the cluster when all nodes are down
 func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 
-	_, _, err := ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
+	_, err := ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
 	if !ts.NoError(err, "expected no error executing get in node zero") {
 		return
 	}
@@ -231,7 +231,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 
 	time.After(5 * time.Second)
 
-	_, _, err = ts.instance.Get(nil, []byte("p"), []byte("k"))
+	_, err = ts.instance.Get(nil, []byte("p"), []byte("k"))
 	if !isDisconnectionError(ts.T(), err) {
 		return
 	}
@@ -239,7 +239,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 	ts.instance.Rebalance()
 
 	for i := 0; i < 100; i++ {
-		_, _, err = ts.instance.Get(nil, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
+		_, err = ts.instance.Get(nil, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
 		if !isDisconnectionError(ts.T(), err) {
 			return
 		}
@@ -252,7 +252,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 	ts.instance.Rebalance()
 
 	for i := 0; i < 100; i++ {
-		_, _, err = ts.instance.Get(nil, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
+		_, err = ts.instance.Get(nil, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
 		if !ts.NoError(err, "expected no errors after rebalancing") {
 			return
 		}
@@ -275,14 +275,14 @@ func TestMaxConnectionRetryError(t *testing.T) {
 		t.Fatalf("expected no errors creating zencached: %v", err)
 	}
 
-	_, _, err = instance.Get(nil, []byte("p"), []byte("k"))
+	_, err = instance.Get(nil, []byte("p"), []byte("k"))
 	if !assert.NoError(t, err, "expected no error connecting") {
 		return
 	}
 
 	dockerh.Remove(newPodName)
 
-	_, _, err = instance.Get(nil, []byte("p"), []byte("k"))
+	_, err = instance.Get(nil, []byte("p"), []byte("k"))
 	if !isDisconnectionError(t, err) {
 		return
 	}
@@ -290,12 +290,12 @@ func TestMaxConnectionRetryError(t *testing.T) {
 	createExtraMemcachedPod(t)
 	defer dockerh.Remove(newPodName)
 
-	_, _, err = instance.Get(nil, []byte("p"), []byte("k"))
+	_, err = instance.Get(nil, []byte("p"), []byte("k"))
 	if err != nil && !isDisconnectionError(t, err) {
 		return
 	}
 
-	_, _, err = instance.Get(nil, []byte("p"), []byte("k"))
+	_, err = instance.Get(nil, []byte("p"), []byte("k"))
 	if !assert.NoError(t, err, "expected no error reconnecting") {
 		return
 	}
@@ -322,7 +322,7 @@ func TestNoAvailableResourcesError(t *testing.T) {
 	for i := 0; i < 10; i++ {
 
 		go func() {
-			_, _, err = instance.Get(nil, []byte("p"), []byte("k"))
+			_, err = instance.Get(nil, []byte("p"), []byte("k"))
 			if err == nil {
 				atomic.AddUint32(&successCount, 1)
 			} else {
