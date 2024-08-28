@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"strconv"
 	"sync/atomic"
 
 	"github.com/rnojiri/logh"
@@ -148,10 +149,22 @@ func (z *Zencached) GetConnectedNodeWorkers(routerHash, path, key []byte) (nw *n
 	}
 
 	if len(routerHash) == 0 {
-		index = rand.Intn(len(z.nodeWorkerArray))
-	} else {
-		index = int(routerHash[len(routerHash)-1]) % len(z.nodeWorkerArray)
+
+		if len(path) > 0 && len(key) == 0 {
+
+			routerHash = path
+
+		} else if len(path) == 0 && len(key) > 0 {
+
+			routerHash = key
+
+		} else {
+
+			routerHash = []byte(strconv.Itoa(rand.Intn(len(z.nodeWorkerArray))))
+		}
 	}
+
+	index = int(routerHash[len(routerHash)-1]) % len(z.nodeWorkerArray)
 
 	nw, err = z.GetNodeWorkersByIndex(index)
 
