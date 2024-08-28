@@ -39,7 +39,7 @@ func Benchmark(b *testing.B) {
 		if err != nil {
 			panic(err)
 		}
-		_, _, err = z.Get(route, path, key)
+		_, err = z.Get(route, path, key)
 		if err != nil {
 			panic(err)
 		}
