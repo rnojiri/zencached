@@ -318,14 +318,14 @@ func (t *Telnet) Send(command ...[]byte) error {
 }
 
 // read - reads the payload from the active connection
-func (t *Telnet) read(endConnInput [][]byte) ([]byte, error) {
+func (t *Telnet) read(trs TelnetResponseSet) ([]byte, ResultType, error) {
 
 	err := t.connection.SetReadDeadline(time.Now().Add(t.configuration.MaxReadTimeout))
 	if err != nil {
 		if logh.ErrorEnabled {
 			t.logger.Error().Msg(fmt.Sprintf("error setting read deadline: %s", err.Error()))
 		}
-		return nil, err
+		return nil, ResultTypeNone, err
 	}
 
 	fullBuffer := bytes.Buffer{}
@@ -334,6 +334,8 @@ func (t *Telnet) read(endConnInput [][]byte) ([]byte, error) {
 	buffer := make([]byte, t.configuration.ReadBufferSize)
 	var bytesRead, fullBytes int
 	growSize := 1
+
+	responseSetIndex := 0
 
 mainLoop:
 	for {
@@ -349,8 +351,11 @@ mainLoop:
 
 		fullBuffer.Write((buffer[0:bytesRead]))
 
-		for j := 0; j < len(endConnInput); j++ {
-			if bytes.LastIndex(buffer[0:bytesRead], endConnInput[j]) != -1 {
+		for j := 0; j < len(trs.ResponseSets); j++ {
+
+			responseSetIndex = j
+
+			if bytes.LastIndex(buffer[0:bytesRead], trs.ResponseSets[j]) != -1 {
 				break mainLoop
 			}
 		}
@@ -358,30 +363,31 @@ mainLoop:
 
 	if err != nil && err != io.EOF {
 		t.logConnectionError(err, read)
-		return nil, err
+		return nil, ResultTypeNone, err
 	}
 
-	return fullBuffer.Bytes(), nil
+	return fullBuffer.Bytes(), trs.ResultTypes[responseSetIndex], nil
 }
 
 // Read - reads the payload from the active connection
-func (t *Telnet) Read(endConnInput [][]byte) ([]byte, error) {
+func (t *Telnet) Read(trs TelnetResponseSet) ([]byte, ResultType, error) {
 
-	var res []byte
+	var data []byte
+	var rt ResultType
 	var err error
 
 	if !t.metricsEnabled {
 
-		res, err = t.read(endConnInput)
+		data, rt, err = t.read(trs)
 
 	} else {
 
 		start := time.Now()
-		res, err = t.read(endConnInput)
+		data, rt, err = t.read(trs)
 		t.configuration.TelnetMetricsCollector.ReadElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
 	}
 
-	return res, err
+	return data, rt, err
 }
 
 // writePayload - writes the payload

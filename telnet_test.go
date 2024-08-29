@@ -35,6 +35,10 @@ func init() {
 	}
 }
 
+func randomResultType() zencached.ResultType {
+	return zencached.ResultTypeValues()[rand.Int()%len(zencached.ResultTypeValues())]
+}
+
 func createExtraMemcachedPod(t *testing.T) (newPodName string, newNode zencached.Node) {
 
 	var err error
@@ -221,11 +225,19 @@ func (ts *telnetTestSuite) TestInfoCommand() {
 		return
 	}
 
-	payload, err := ts.telnet.Read([][]byte{[]byte("END")})
+	expectedRandomType := randomResultType()
+
+	payload, resultType, err := ts.telnet.Read(
+		zencached.TelnetResponseSet{
+			ResponseSets: [][]byte{[]byte("END")},
+			ResultTypes:  []zencached.ResultType{expectedRandomType},
+		},
+	)
 	if !ts.NoError(err, "error reading response") {
 		return
 	}
 
+	ts.Equal(expectedRandomType, resultType, "expected same result type")
 	ts.True(regexp.MustCompile(`STAT version [0-9\\.]+`).MatchString(string(payload)), "version not found")
 
 	ts.telnet.Close()
@@ -253,11 +265,19 @@ func (ts *telnetTestSuite) TestInsertCommand() {
 		return
 	}
 
-	payload, err := ts.telnet.Read([][]byte{[]byte("STORED")})
+	expectedRandomType := randomResultType()
+
+	payload, resultType, err := ts.telnet.Read(
+		zencached.TelnetResponseSet{
+			ResponseSets: [][]byte{[]byte("STORED")},
+			ResultTypes:  []zencached.ResultType{expectedRandomType},
+		},
+	)
 	if !ts.NoError(err, "error reading response") {
 		return
 	}
 
+	ts.Equal(expectedRandomType, resultType, "expected same result type")
 	ts.True(bytes.Contains(payload, []byte("STORED")), "expected \"STORED\" as answer")
 
 	err = ts.telnet.Send([]byte("get gotest\r\n"))
@@ -265,11 +285,19 @@ func (ts *telnetTestSuite) TestInsertCommand() {
 		return
 	}
 
-	payload, err = ts.telnet.Read([][]byte{[]byte("END")})
+	expectedRandomType = randomResultType()
+
+	payload, resultType, err = ts.telnet.Read(
+		zencached.TelnetResponseSet{
+			ResponseSets: [][]byte{[]byte("END")},
+			ResultTypes:  []zencached.ResultType{expectedRandomType},
+		},
+	)
 	if !ts.NoError(err, "error reading response") {
 		return
 	}
 
+	ts.Equal(expectedRandomType, resultType, "expected same result type")
 	ts.True(bytes.Contains(payload, []byte("test")), "expected \"test\" to be stored")
 
 	ts.telnet.Close()

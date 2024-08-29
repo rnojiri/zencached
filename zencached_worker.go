@@ -12,14 +12,14 @@ import (
 )
 
 type cmdResponse struct {
-	exists   bool
-	response []byte
-	err      error
+	resultType ResultType
+	response   []byte
+	err        error
 }
 
 type cmdJob struct {
 	cmd                              MemcachedCommand
-	beginResponseSet, endResponseSet memcachedResponseSet
+	beginResponseSet, endResponseSet TelnetResponseSet
 	renderedCmd, path, key           []byte
 	forceCacheMissMetric             bool
 	response                         chan cmdResponse
@@ -174,32 +174,32 @@ func (z *Zencached) GetConnectedNodeWorkers(routerHash, path, key []byte) (nw *n
 // checkResponse - checks the memcached response
 func (nw *nodeWorkers) checkResponse(
 	telnetConn *Telnet,
-	checkReadSet, checkResponseSet memcachedResponseSet,
+	checkReadSet, checkResponseSet TelnetResponseSet,
 ) cmdResponse {
 
-	response, err := telnetConn.Read(checkReadSet)
+	response, resultType, err := telnetConn.Read(checkReadSet)
 	if err != nil {
-		return cmdResponse{false, nil, err}
+		return cmdResponse{resultType, nil, err}
 	}
 
 	if len(response) == 0 {
-		return cmdResponse{false, nil, ErrMemcachedNoResponse}
+		return cmdResponse{resultType, nil, ErrMemcachedNoResponse}
 	}
 
-	if !bytes.HasPrefix(response, checkResponseSet[0]) {
-		if !bytes.Contains(response, checkResponseSet[1]) {
-			return cmdResponse{false, nil, fmt.Errorf("%w: %s", ErrMemcachedInvalidResponse, string(response))}
+	if !bytes.HasPrefix(response, checkResponseSet.ResponseSets[0]) {
+		if !bytes.Contains(response, checkResponseSet.ResponseSets[1]) {
+			return cmdResponse{resultType, nil, fmt.Errorf("%w: %s", ErrMemcachedInvalidResponse, string(response))}
 		}
 
-		return cmdResponse{false, response, nil}
+		return cmdResponse{resultType, response, nil}
 	}
 
-	return cmdResponse{true, response, nil}
+	return cmdResponse{resultType, response, nil}
 }
 
 func (nw *nodeWorkers) sendAndReadResponse(
 	telnetConn *Telnet,
-	beginResponseSet, endResponseSet memcachedResponseSet,
+	beginResponseSet, endResponseSet TelnetResponseSet,
 	renderedCmd []byte,
 ) cmdResponse {
 
@@ -208,5 +208,5 @@ func (nw *nodeWorkers) sendAndReadResponse(
 		return nw.checkResponse(telnetConn, beginResponseSet, endResponseSet)
 	}
 
-	return cmdResponse{false, nil, err}
+	return cmdResponse{ResultTypeNone, nil, err}
 }
