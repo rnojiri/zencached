@@ -104,27 +104,27 @@ func (ts *zencachedTestSuite) TestRouting() {
 // TestAddCommand - tests the add command
 func (ts *zencachedTestSuite) TestAddCommand() {
 
-	f := func(route []byte, path, key, value string, expectedStored bool, testIndex int) {
+	f := func(route []byte, path, key, value string, expectedResultType zencached.ResultType, testIndex int) {
 
 		result, err := ts.instance.Add(route, []byte(path), []byte(key), []byte(value), defaultTTL)
 		if !ts.NoError(err, "expected no error storing key") {
 			return
 		}
 
-		ts.Truef(expectedStored == result.Exists, "unexpected storage status for test %d and key %s", testIndex, key)
+		ts.Truef(expectedResultType == result.Type, "unexpected storage status for test %d and key %s: received %s, expected %s", testIndex, key, result.Type.String(), expectedResultType.String())
 	}
 
-	f([]byte{3}, "path", "test1", "test1", true, 1)
-	f([]byte{3}, "path", "test2", "test2", true, 1)
-	f([]byte{9}, "path", "test1", "error", false, 1)
+	f([]byte{3}, "path", "test1", "test1", zencached.ResultTypeStored, 1)
+	f([]byte{3}, "path", "test2", "test2", zencached.ResultTypeStored, 1)
+	f([]byte{9}, "path", "test1", "error", zencached.ResultTypeNotStored, 1)
 
-	f([]byte{4}, "path", "test1", "test1", true, 2)
-	f([]byte{4}, "path", "test2", "test2", true, 2)
-	f([]byte{7}, "path", "test1", "error", false, 2)
+	f([]byte{4}, "path", "test1", "test1", zencached.ResultTypeStored, 2)
+	f([]byte{4}, "path", "test2", "test2", zencached.ResultTypeStored, 2)
+	f([]byte{7}, "path", "test1", "error", zencached.ResultTypeNotStored, 2)
 
-	f([]byte{5}, "path", "test1", "test1", true, 3)
-	f([]byte{5}, "path", "test2", "test2", true, 3)
-	f([]byte{8}, "path", "test1", "error", false, 3)
+	f([]byte{5}, "path", "test1", "test1", zencached.ResultTypeStored, 3)
+	f([]byte{5}, "path", "test2", "test2", zencached.ResultTypeStored, 3)
+	f([]byte{8}, "path", "test1", "error", zencached.ResultTypeNotStored, 3)
 }
 
 // rawSetKey - sets a key on memcached using raw command
@@ -135,10 +135,19 @@ func (ts *zencachedTestSuite) rawSetKey(telnetConn *zencached.Telnet, path, key,
 		return
 	}
 
-	_, err = telnetConn.Read([][]byte{[]byte("STORED")})
+	expectedRandomType := randomResultType()
+
+	_, resultType, err := telnetConn.Read(
+		zencached.TelnetResponseSet{
+			ResponseSets: [][]byte{[]byte("STORED")},
+			ResultTypes:  []zencached.ResultType{expectedRandomType},
+		},
+	)
 	if !ts.NoError(err, "expected no error reading key") {
 		return
 	}
+
+	ts.Equal(expectedRandomType, resultType, "expected same result type")
 }
 
 // TestGetCommand - tests the get command
@@ -165,7 +174,7 @@ func (ts *zencachedTestSuite) TestGetCommand() {
 			return
 		}
 
-		if !ts.Truef(result.Exists, "expected value from key \"%s\" to be found on test %d", key, testIndex) {
+		if !ts.Equal(zencached.ResultTypeFound, result.Type, "expected value from key \"%s\" to be found on test %d", key, testIndex) {
 			return
 		}
 
@@ -193,7 +202,7 @@ func (ts *zencachedTestSuite) TestSetCommand() {
 			return
 		}
 
-		if !ts.Truef(result.Exists, "unexpected storage status for test %d", testIndex, key) {
+		if !ts.Equal(zencached.ResultTypeStored, result.Type, "unexpected storage status for test %d", testIndex, key) {
 			return
 		}
 
@@ -202,7 +211,7 @@ func (ts *zencachedTestSuite) TestSetCommand() {
 			return
 		}
 
-		if !ts.Truef(result.Exists, "unexpected get status for test %d", testIndex, key) {
+		if !ts.Equal(zencached.ResultTypeFound, result.Type, "unexpected get status for test %d", testIndex, key) {
 			return
 		}
 
@@ -246,17 +255,23 @@ func (ts *zencachedTestSuite) TestDeleteCommand() {
 			return
 		}
 
-		if !ts.Truef(result.Exists == setValue, "unexpected delete status for test %d", testIndex, key) {
-			return
-		}
-
 		if setValue {
+			if !ts.Equal(zencached.ResultTypeDeleted, result.Type, "unexpected delete status for test %d", testIndex, key) {
+				return
+			}
+
 			result, err := ts.instance.Get(route, []byte(path), []byte(key))
 			if !ts.NoError(err, "expected no error storing key") {
 				return
 			}
 
-			if !ts.Truef(!result.Exists, "unexpected get status for test %d", testIndex, key) {
+			if !ts.Equal(zencached.ResultTypeNotFound, result.Type, "unexpected get status for test %d", testIndex, key) {
+				return
+			}
+
+		} else {
+
+			if !ts.Equal(zencached.ResultTypeNotFound, result.Type, "unexpected delete status for test %d", testIndex, key) {
 				return
 			}
 		}
@@ -293,10 +308,19 @@ func (ts *zencachedTestSuite) TestVersionCommand() {
 		return
 	}
 
-	payload, err := t.Read([][]byte{[]byte("VERSION")})
+	expectedRandomType := randomResultType()
+
+	payload, resultType, err := t.Read(
+		zencached.TelnetResponseSet{
+			ResponseSets: [][]byte{[]byte("VERSION")},
+			ResultTypes:  []zencached.ResultType{expectedRandomType},
+		},
+	)
 	if !ts.NoError(err, "error reading response") {
 		return
 	}
+
+	ts.Equal(expectedRandomType, resultType, "expected same result type")
 
 	result, err := ts.instance.Version(nil)
 	if !ts.NoError(err, "error getting version") {

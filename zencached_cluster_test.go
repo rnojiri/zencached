@@ -2,6 +2,8 @@ package zencached_test
 
 import (
 	"bytes"
+
+	"github.com/rnojiri/zencached"
 )
 
 // TestClusterSetCommand - tests the cluster storage command
@@ -23,7 +25,7 @@ func (ts *zencachedTestSuite) TestClusterSetCommand() {
 			return
 		}
 
-		if !ts.Truef(results[i].Exists, "expected storage on node: %d", i) {
+		if !ts.Equal(zencached.ResultTypeStored, results[i].Type, "expected storage on node: %d", i) {
 			return
 		}
 
@@ -48,7 +50,12 @@ func (ts *zencachedTestSuite) TestClusterSetCommand() {
 			return
 		}
 
-		response, err := t.Read([][]byte{[]byte("END")})
+		response, _, err := t.Read(
+			zencached.TelnetResponseSet{
+				ResponseSets: [][]byte{[]byte("END")},
+				ResultTypes:  []zencached.ResultType{zencached.ResultTypeNone},
+			},
+		)
 		if !ts.NoError(err, "expected success reading last line") {
 			return
 		}
@@ -99,7 +106,7 @@ func (ts *zencachedTestSuite) TestClusterGetCommand() {
 				return
 			}
 
-			if !ts.Truef(results[i].Exists, "expected value to be stored on cluster get: %d", i) {
+			if !ts.Equal(zencached.ResultTypeFound, results[i].Type, "expected value to be found on cluster get: %d", i) {
 				return
 			}
 
@@ -131,7 +138,7 @@ func (ts *zencachedTestSuite) TestClusterDeleteCommand() {
 			return
 		}
 
-		if !ts.Truef(results[i].Exists, "expected delete on node: %d", i) {
+		if !ts.Equal(zencached.ResultTypeDeleted, results[i].Type, "expected delete on node: %d", i) {
 			return
 		}
 
@@ -156,7 +163,12 @@ func (ts *zencachedTestSuite) TestClusterDeleteCommand() {
 			return
 		}
 
-		response, err := t.Read([][]byte{[]byte("END")})
+		response, _, err := t.Read(
+			zencached.TelnetResponseSet{
+				ResponseSets: [][]byte{[]byte("END")},
+				ResultTypes:  []zencached.ResultType{zencached.ResultTypeNone},
+			},
+		)
 		if !ts.NoError(err, "expected success reading last line") {
 			return
 		}

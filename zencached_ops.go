@@ -25,8 +25,8 @@ const (
 // OperationResult - default operation results with metadata
 type OperationResult struct {
 
-	// Exists - returns if the data was already stored
-	Exists bool
+	// Type - returns if the data was already stored
+	Type ResultType
 
 	// Data - the key content in bytes
 	Data []byte
@@ -35,7 +35,10 @@ type OperationResult struct {
 	Node Node
 }
 
-type memcachedResponseSet [][]byte
+type TelnetResponseSet struct {
+	ResponseSets [][]byte
+	ResultTypes  []ResultType
+}
 
 // memcached responses
 var (
@@ -49,17 +52,36 @@ var (
 	mcrDeleted   []byte = []byte("DELETED")
 	mcrVersion   []byte = []byte("VERSION")
 
-	// response set
-	mcrStoredResponseSet        memcachedResponseSet = memcachedResponseSet{mcrStored, mcrNotStored}
-	mcrGetCheckBeginResponseSet memcachedResponseSet = memcachedResponseSet{mcrEnd}
-	mcrGetCheckEndResponseSet   memcachedResponseSet = memcachedResponseSet{mcrValue, mcrEnd}
-	mcrDeletedResponseSet       memcachedResponseSet = memcachedResponseSet{mcrDeleted, mcrNotFound}
-	mcrVersionResponseSet       memcachedResponseSet = memcachedResponseSet{mcrVersion}
+	// response sets
+	mcrStoredResponseSet TelnetResponseSet = TelnetResponseSet{
+		ResponseSets: [][]byte{mcrNotStored, mcrStored},
+		ResultTypes:  []ResultType{ResultTypeNotStored, ResultTypeStored},
+	}
+
+	mcrGetCheckBeginResponseSet TelnetResponseSet = TelnetResponseSet{
+		ResponseSets: [][]byte{mcrValue, mcrEnd},
+		ResultTypes:  []ResultType{ResultTypeFound, ResultTypeNotFound},
+	}
+
+	mcrGetCheckEndResponseSet TelnetResponseSet = TelnetResponseSet{
+		ResponseSets: [][]byte{mcrValue, mcrEnd},
+		ResultTypes:  []ResultType{ResultTypeFound, ResultTypeNotFound},
+	}
+
+	mcrDeletedResponseSet TelnetResponseSet = TelnetResponseSet{
+		ResponseSets: [][]byte{mcrDeleted, mcrNotFound},
+		ResultTypes:  []ResultType{ResultTypeDeleted, ResultTypeNotFound},
+	}
+
+	mcrVersionResponseSet TelnetResponseSet = TelnetResponseSet{
+		ResponseSets: [][]byte{mcrVersion},
+		ResultTypes:  []ResultType{ResultTypeNone},
+	}
 
 	errNoResourceAvailable cmdResponse = cmdResponse{
-		exists:   false,
-		response: nil,
-		err:      ErrNoAvailableResources,
+		resultType: ResultTypeError,
+		response:   nil,
+		err:        ErrNoAvailableResources,
 	}
 )
 
@@ -166,7 +188,7 @@ func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 
 		nw.configuration.ZencachedMetricsCollector.CommandExecution(nw.node.Host, job.cmd, job.path, job.key)
 
-		if result.exists && !job.forceCacheMissMetric {
+		if result.resultType == ResultTypeFound && !job.forceCacheMissMetric {
 			nw.configuration.ZencachedMetricsCollector.CacheHitEvent(nw.node.Host, job.cmd, job.path, job.key)
 		} else {
 			nw.configuration.ZencachedMetricsCollector.CacheMissEvent(nw.node.Host, job.cmd, job.path, job.key)
@@ -205,8 +227,8 @@ func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, 
 	}
 
 	return &OperationResult{
-		Exists: result.exists,
-		Node:   nw.node,
+		Type: result.resultType,
+		Node: nw.node,
 	}, nil
 }
 
@@ -280,10 +302,10 @@ func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult
 		return nil, result.err
 	}
 
-	if !result.exists {
+	if result.resultType != ResultTypeFound {
 		return &OperationResult{
-			Exists: false,
-			Node:   nw.node,
+			Type: result.resultType,
+			Node: nw.node,
 		}, nil
 	}
 
@@ -293,9 +315,9 @@ func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult
 	}
 
 	return &OperationResult{
-		Exists: true,
-		Data:   result.response[start:end],
-		Node:   nw.node,
+		Type: ResultTypeFound,
+		Data: result.response[start:end],
+		Node: nw.node,
 	}, nil
 }
 
@@ -330,8 +352,8 @@ func (z *Zencached) baseDelete(nw *nodeWorkers, path, key []byte) (*OperationRes
 	}
 
 	return &OperationResult{
-		Exists: result.exists,
-		Node:   nw.node,
+		Type: result.resultType,
+		Node: nw.node,
 	}, nil
 }
 
@@ -394,10 +416,10 @@ func (z *Zencached) baseVersion(nw *nodeWorkers) (*OperationResult, error) {
 		return nil, result.err
 	}
 
-	if !result.exists {
+	if result.resultType != ResultTypeNone {
 		return &OperationResult{
-			Exists: false,
-			Node:   nw.node,
+			Type: result.resultType,
+			Node: nw.node,
 		}, nil
 	}
 
@@ -407,8 +429,8 @@ func (z *Zencached) baseVersion(nw *nodeWorkers) (*OperationResult, error) {
 	}
 
 	return &OperationResult{
-		Exists: true,
-		Data:   result.response[start:end],
-		Node:   nw.node,
+		Type: result.resultType,
+		Data: result.response[start:end],
+		Node: nw.node,
 	}, nil
 }

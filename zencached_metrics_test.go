@@ -200,7 +200,7 @@ func (ts *zencachedMetricsTestSuite) TestCacheHitEvents() {
 	ts.instance.Delete(nil, []byte("path1"), []byte("key1"))
 	ts.instance.SendTimedMetrics()
 
-	ts.Equal(3, ts.metrics.numCacheHitEvent, "expects two cache hit events")
+	ts.Equal(2, ts.metrics.numCacheHitEvent, "expects two cache hit events")
 	ts.Equal(4, ts.metrics.numResourcesChangeEvent, "expected four events changing the number of resources")
 	ts.Equal(4, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
 	ts.Equal(4, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")

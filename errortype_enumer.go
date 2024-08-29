@@ -9,11 +9,11 @@ import (
 	"strings"
 )
 
-const _ErrorTypeName = "undefinedmax_reconnections_reachedmemcached_invalid_responsememcached_no_responsetelnet_connection_is_closedno_available_nodesno_available_connections"
+const _ErrorTypeName = "undefinedmax_reconnections_reachedmemcached_invalid_responsememcached_no_responsetelnet_connection_is_closedno_available_nodesno_available_connectionsno_available_resources"
 
-var _ErrorTypeIndex = [...]uint8{0, 9, 34, 60, 81, 108, 126, 150}
+var _ErrorTypeIndex = [...]uint8{0, 9, 34, 60, 81, 108, 126, 150, 172}
 
-const _ErrorTypeLowerName = "undefinedmax_reconnections_reachedmemcached_invalid_responsememcached_no_responsetelnet_connection_is_closedno_available_nodesno_available_connections"
+const _ErrorTypeLowerName = "undefinedmax_reconnections_reachedmemcached_invalid_responsememcached_no_responsetelnet_connection_is_closedno_available_nodesno_available_connectionsno_available_resources"
 
 func (i ErrorType) String() string {
 	if i >= ErrorType(len(_ErrorTypeIndex)-1) {
@@ -33,9 +33,10 @@ func _ErrorTypeNoOp() {
 	_ = x[ErrorTypeTelnetConnectionIsClosed-(4)]
 	_ = x[ErrorTypeNoAvailableNodes-(5)]
 	_ = x[ErrorTypeNoAvailableConnections-(6)]
+	_ = x[ErrorTypeNoAvailableResources-(7)]
 }
 
-var _ErrorTypeValues = []ErrorType{ErrorTypeUndefined, ErrorTypeMaxReconnectionsReached, ErrorTypeMemcachedInvalidResponse, ErrorTypeMemcachedNoResponse, ErrorTypeTelnetConnectionIsClosed, ErrorTypeNoAvailableNodes, ErrorTypeNoAvailableConnections}
+var _ErrorTypeValues = []ErrorType{ErrorTypeUndefined, ErrorTypeMaxReconnectionsReached, ErrorTypeMemcachedInvalidResponse, ErrorTypeMemcachedNoResponse, ErrorTypeTelnetConnectionIsClosed, ErrorTypeNoAvailableNodes, ErrorTypeNoAvailableConnections, ErrorTypeNoAvailableResources}
 
 var _ErrorTypeNameToValueMap = map[string]ErrorType{
 	_ErrorTypeName[0:9]:          ErrorTypeUndefined,
@@ -52,6 +53,8 @@ var _ErrorTypeNameToValueMap = map[string]ErrorType{
 	_ErrorTypeLowerName[108:126]: ErrorTypeNoAvailableNodes,
 	_ErrorTypeName[126:150]:      ErrorTypeNoAvailableConnections,
 	_ErrorTypeLowerName[126:150]: ErrorTypeNoAvailableConnections,
+	_ErrorTypeName[150:172]:      ErrorTypeNoAvailableResources,
+	_ErrorTypeLowerName[150:172]: ErrorTypeNoAvailableResources,
 }
 
 var _ErrorTypeNames = []string{
@@ -62,6 +65,7 @@ var _ErrorTypeNames = []string{
 	_ErrorTypeName[81:108],
 	_ErrorTypeName[108:126],
 	_ErrorTypeName[126:150],
+	_ErrorTypeName[150:172],
 }
 
 // ErrorTypeString retrieves an enum value from the enum constants string name.
