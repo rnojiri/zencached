@@ -79,8 +79,8 @@ func (tc *TelnetConfiguration) setDefaults() {
 		tc.MaxReadTimeout = time.Second
 	}
 
-	if tc.ReadBufferSize == 0 {
-		tc.ReadBufferSize = 64
+	if tc.ReadBufferSize < 8192 { // less than 8kb of read buffer is bad
+		tc.ReadBufferSize = 8192
 	}
 
 	if tc.HostConnectionTimeout == 0 {
@@ -329,11 +329,8 @@ func (t *Telnet) read(trs TelnetResponseSet) ([]byte, ResultType, error) {
 	}
 
 	fullBuffer := bytes.Buffer{}
-	fullBuffer.Grow(t.configuration.ReadBufferSize)
-
 	buffer := make([]byte, t.configuration.ReadBufferSize)
 	var bytesRead, fullBytes int
-	growSize := 1
 
 	responseSetIndex := 0
 
@@ -345,11 +342,8 @@ mainLoop:
 		}
 
 		fullBytes += bytesRead
-		if fullBytes > t.configuration.ReadBufferSize*growSize {
-			fullBuffer.Grow(t.configuration.ReadBufferSize)
-		}
 
-		fullBuffer.Write((buffer[0:bytesRead]))
+		fullBuffer.Write((buffer[:bytesRead]))
 
 		for j := 0; j < len(trs.ResponseSets); j++ {
 
