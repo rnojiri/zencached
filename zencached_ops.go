@@ -88,7 +88,7 @@ var (
 	}
 
 	// ErrInvalidKeyFormat - raised when a key has a invlid format
-	ErrInvalidKeyFormat error = errors.New("key format is invalid, it should have a maximum of 250 bytes without new lines and spaces characters")
+	ErrInvalidKeyFormat error = errors.New("key format is invalid, it should have more than 0 or maximum of 250 bytes without new lines and spaces")
 )
 
 // MemcachedCommand type
@@ -112,14 +112,30 @@ var (
 )
 
 // ValidateKey - validates a key
-func ValidateKey(key []byte) error {
+func ValidateKey(path, key []byte) error {
 
-	if len(key) > maxAcceptedKeyLength ||
-		bytes.IndexByte(key, whiteSpace) > -1 ||
-		bytes.IndexByte(key, lineBreaksN) > -1 ||
-		bytes.IndexByte(key, lineBreaksR) > -1 {
+	var keyComposite []byte
 
-		return fmt.Errorf("%w: %s", ErrInvalidKeyFormat, string(key))
+	if len(path) > 0 {
+
+		keyComposite = path
+
+		if len(key) > 0 {
+			keyComposite = append(keyComposite, key...)
+		}
+
+	} else {
+
+		keyComposite = key
+	}
+
+	if len(keyComposite) == 0 ||
+		len(keyComposite) > maxAcceptedKeyLength ||
+		bytes.IndexByte(keyComposite, whiteSpace) > -1 ||
+		bytes.IndexByte(keyComposite, lineBreaksN) > -1 ||
+		bytes.IndexByte(keyComposite, lineBreaksR) > -1 {
+
+		return fmt.Errorf("%w: %s", ErrInvalidKeyFormat, string(keyComposite))
 	}
 
 	return nil
@@ -154,7 +170,7 @@ func (z *Zencached) renderStoreCmd(cmd MemcachedCommand, path, key, value []byte
 // Set - performs an storage set operation
 func (z *Zencached) Set(routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error) {
 
-	if err := ValidateKey(key); err != nil {
+	if err := ValidateKey(path, key); err != nil {
 		return nil, err
 	}
 
@@ -164,7 +180,7 @@ func (z *Zencached) Set(routerHash, path, key, value []byte, ttl uint64) (*Opera
 // Add - performs an storage add operation
 func (z *Zencached) Add(routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error) {
 
-	if err := ValidateKey(key); err != nil {
+	if err := ValidateKey(path, key); err != nil {
 		return nil, err
 	}
 
@@ -277,7 +293,7 @@ func (z *Zencached) renderKeyOnlyCmd(cmd MemcachedCommand, path, key []byte) []b
 // Get - performs a get operation
 func (z *Zencached) Get(routerHash, path, key []byte) (*OperationResult, error) {
 
-	if err := ValidateKey(key); err != nil {
+	if err := ValidateKey(path, key); err != nil {
 		return nil, err
 	}
 
@@ -356,7 +372,7 @@ func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult
 // Delete - performs a delete operation
 func (z *Zencached) Delete(routerHash, path, key []byte) (*OperationResult, error) {
 
-	if err := ValidateKey(key); err != nil {
+	if err := ValidateKey(path, key); err != nil {
 		return nil, err
 	}
 

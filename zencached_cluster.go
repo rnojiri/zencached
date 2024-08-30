@@ -25,6 +25,16 @@ func (z *Zencached) clusterStore(cmd MemcachedCommand, path, key, value []byte, 
 	results := make([]*OperationResult, numNodes)
 	errors := make([]error, numNodes)
 
+	if err := ValidateKey(path, key); err != nil {
+
+		for i := 0; i < numNodes; i++ {
+			results[i] = nil
+			errors[i] = err
+		}
+
+		return results, errors
+	}
+
 	for i := 0; i < numNodes; i++ {
 
 		nw, err := z.GetNodeWorkersByIndex(i)
@@ -47,6 +57,16 @@ func (z *Zencached) ClusterGet(path, key []byte) ([]*OperationResult, []error) {
 	results := make([]*OperationResult, numNodes)
 	errors := make([]error, numNodes)
 
+	if err := ValidateKey(path, key); err != nil {
+
+		for i := 0; i < numNodes; i++ {
+			results[i] = nil
+			errors[i] = err
+		}
+
+		return results, errors
+	}
+
 	for i := 0; i < numNodes; i++ {
 
 		nw, err := z.GetNodeWorkersByIndex(i)
@@ -68,6 +88,16 @@ func (z *Zencached) ClusterDelete(path, key []byte) ([]*OperationResult, []error
 
 	results := make([]*OperationResult, numNodes)
 	errors := make([]error, numNodes)
+
+	if err := ValidateKey(path, key); err != nil {
+
+		for i := 0; i < numNodes; i++ {
+			results[i] = nil
+			errors[i] = err
+		}
+
+		return results, errors
+	}
 
 	for i := 0; i < numNodes; i++ {
 

@@ -101,6 +101,100 @@ func (ts *zencachedTestSuite) TestRouting() {
 	}
 }
 
+func (ts *zencachedTestSuite) genericInvalidKeyTests(opfuncWrapper func(route, path, key []byte) []error) {
+
+	genericTests := func(path, key []byte, keyIssue string) {
+
+		route := []byte("route")
+
+		errs := opfuncWrapper(route, path, key)
+		for _, err := range errs {
+			ts.ErrorContainsf(err, zencached.ErrInvalidKeyFormat.Error(), "expected invalid key format providing all parameters: %s", keyIssue)
+		}
+
+		errs = opfuncWrapper(nil, path, key)
+		for _, err := range errs {
+			ts.ErrorContainsf(err, zencached.ErrInvalidKeyFormat.Error(), "expected invalid key format not providing route: %s", keyIssue)
+		}
+
+		errs = opfuncWrapper(nil, nil, key)
+		for _, err := range errs {
+			ts.ErrorContainsf(err, zencached.ErrInvalidKeyFormat.Error(), "expected invalid key format not providing route and path: %s", keyIssue)
+		}
+
+		errs = opfuncWrapper(nil, nil, nil)
+		for _, err := range errs {
+			ts.ErrorContainsf(err, zencached.ErrInvalidKeyFormat.Error(), "expected invalid key format not providing anything: %s", keyIssue)
+		}
+	}
+
+	path := []byte("pa th")
+	key := []byte("ke y")
+
+	genericTests(path, key, "key with spaces")
+
+	path = []byte("pa\nth")
+	key = []byte("ke\ny")
+
+	genericTests(path, key, "key with new lines")
+
+	path = []byte("")
+	key = []byte("")
+
+	genericTests(path, key, "key with empty path and key")
+
+	path = []byte("Bxyf7xtxtg4byuQwhnkATRQiq4R1wW37a5rjMrTL42Zf0r9F1SzBFt89nAy9zxPYitwLbmeEaPaA6pt5cBha0JJmbu61hHyPCP2vv21Eq7Net0qJdETaxiKtpxwAcZTfFWdy1QhfiFfPnXyW9QxeqZtEWVtbgBWFDJ1cRFTvDNA3qNrvp8vn4BbFbcJnzATLadARxDpBYe0CgjyaNKS3c5U7kGwdEkxMCh3jGJviyjagwhwB8bmk20YFZcZ")
+	key = []byte("Bxyf7xtxtg4byuQwhnkATRQiq4R1wW37a5rjMrTL42Zf0r9F1SzBFt89nAy9zxPYitwLbmeEaPaA6pt5cBha0JJmbu61hHyPCP2vv21Eq7Net0qJdETaxiKtpxwAcZTfFWdy1QhfiFfPnXyW9QxeqZtEWVtbgBWFDJ1cRFTvDNA3qNrvp8vn4BbFbcJnzATLadARxDpBYe0CgjyaNKS3c5U7kGwdEkxMCh3jGJviyjagwhwB8bmk20YFZcZ")
+
+	genericTests(path, key, "key with more than 250 characters")
+}
+
+// TestAddCommandWithInvalidKey - tests the add command with invalid keys
+func (ts *zencachedTestSuite) TestAddCommandWithInvalidKey() {
+
+	ts.genericInvalidKeyTests(
+		func(route, path, key []byte) []error {
+			value := []byte("value")
+			_, err := ts.instance.Add(route, path, key, value, defaultTTL)
+			return []error{err}
+		},
+	)
+}
+
+// TestSetCommandWithInvalidKey - tests the set command with invalid keys
+func (ts *zencachedTestSuite) TestSetCommandWithInvalidKey() {
+
+	ts.genericInvalidKeyTests(
+		func(route, path, key []byte) []error {
+			value := []byte("value")
+			_, err := ts.instance.Set(route, path, key, value, defaultTTL)
+			return []error{err}
+		},
+	)
+}
+
+// TestGetCommandWithInvalidKey - tests the get command with invalid keys
+func (ts *zencachedTestSuite) TestGetCommandWithInvalidKey() {
+
+	ts.genericInvalidKeyTests(
+		func(route, path, key []byte) []error {
+			_, err := ts.instance.Get(route, path, key)
+			return []error{err}
+		},
+	)
+}
+
+// TestDeleteCommandWithInvalidKey - tests the delete command with invalid keys
+func (ts *zencachedTestSuite) TestDeleteCommandWithInvalidKey() {
+
+	ts.genericInvalidKeyTests(
+		func(route, path, key []byte) []error {
+			_, err := ts.instance.Delete(route, path, key)
+			return []error{err}
+		},
+	)
+}
+
 // TestAddCommand - tests the add command
 func (ts *zencachedTestSuite) TestAddCommand() {
 
