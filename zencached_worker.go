@@ -35,6 +35,21 @@ type nodeWorkers struct {
 	configuration    *Configuration
 }
 
+type nodeWorkersByNodeName []*nodeWorkers
+
+func (u nodeWorkersByNodeName) Len() int {
+
+	return len(u)
+}
+func (u nodeWorkersByNodeName) Swap(i, j int) {
+
+	u[i], u[j] = u[j], u[i]
+}
+func (u nodeWorkersByNodeName) Less(i, j int) bool {
+
+	return u[i].node.Host < u[j].node.Host
+}
+
 // NewTelnetFromNode - creates a new telnet connection based in this node configuration
 func (nw *nodeWorkers) NewTelnetFromNode() (*Telnet, error) {
 
@@ -144,19 +159,15 @@ func (z *Zencached) GetConnectedNodeWorkers(routerHash, path, key []byte) (nw *n
 		return nil, 0, ErrNoAvailableNodes
 	}
 
-	if routerHash == nil && len(path) > 0 && len(key) > 0 {
-		routerHash = append(path, key...)
-	}
-
 	if len(routerHash) == 0 {
 
-		if len(path) > 0 && len(key) == 0 {
+		if len(key) > 0 {
 
-			routerHash = path
+			routerHash = []byte{key[len(key)-1]}
 
-		} else if len(path) == 0 && len(key) > 0 {
+		} else if len(path) > 0 {
 
-			routerHash = key
+			routerHash = []byte{path[len(path)-1]}
 
 		} else {
 
