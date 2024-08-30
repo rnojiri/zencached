@@ -199,6 +199,8 @@ func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 		return
 	}
 
+	<-time.After(5 * time.Second)
+
 	ts.instance.Rebalance()
 
 	reconnected := false
@@ -229,7 +231,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 
 	terminatePods()
 
-	time.After(5 * time.Second)
+	<-time.After(2 * time.Second)
 
 	_, err = ts.instance.Get(nil, []byte("p"), []byte("k"))
 	if !isDisconnectionError(ts.T(), err) {
@@ -245,9 +247,11 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 		}
 	}
 
-	time.After(5 * time.Second)
+	<-time.After(2 * time.Second)
 
 	startMemcachedCluster()
+
+	<-time.After(2 * time.Second)
 
 	ts.instance.Rebalance()
 
