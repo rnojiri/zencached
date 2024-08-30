@@ -51,11 +51,13 @@ func (ts *zencachedRecoveryTestSuite) TearDownSuite() {
 
 func isDisconnectionError(t *testing.T, err error) bool {
 
-	return assert.True(t, errors.Is(err, zencached.ErrMaxReconnectionsReached) ||
-		errors.Is(err, zencached.ErrMemcachedNoResponse) ||
-		errors.Is(err, zencached.ErrNoAvailableConnections) ||
-		errors.Is(err, zencached.ErrNoAvailableNodes) ||
-		errors.Is(err, zencached.ErrTelnetConnectionIsClosed),
+	return assert.True(
+		t,
+		errors.Is(err, zencached.ErrMaxReconnectionsReached) ||
+			errors.Is(err, zencached.ErrMemcachedNoResponse) ||
+			errors.Is(err, zencached.ErrNoAvailableConnections) ||
+			errors.Is(err, zencached.ErrNoAvailableNodes) ||
+			errors.Is(err, zencached.ErrTelnetConnectionIsClosed),
 		fmt.Sprintf("expected a disconnection error, instead: %v", err),
 	)
 }
@@ -179,7 +181,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceAddingNode() {
 // TestClusterNodeDown - tests the cluster  recovery when a node is down
 func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 
-	_, err := ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
+	_, err := ts.instance.Get([]byte{10, 200}, []byte("p"), []byte("k"))
 	if !ts.NoError(err, "expected no error executing get in node zero") {
 		return
 	}
@@ -189,7 +191,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 		return
 	}
 
-	_, err = ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
+	_, err = ts.instance.Get([]byte{10, 200}, []byte("p"), []byte("k"))
 	if !isDisconnectionError(ts.T(), err) {
 		return
 	}

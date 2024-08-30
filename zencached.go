@@ -1,6 +1,7 @@
 package zencached
 
 import (
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -246,6 +247,9 @@ func (z *Zencached) rebalance() {
 
 	z.nodeWorkerArray = nodeTelnetConns
 	z.connectedNodes = connectedNodes
+
+	sort.Sort(nodeWorkersByNodeName(z.nodeWorkerArray))
+	sort.Sort(nodeByName(z.connectedNodes))
 
 	if logh.InfoEnabled {
 		z.logger.Info().Msg("rebalancing finished")

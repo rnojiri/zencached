@@ -40,6 +40,21 @@ func (n Node) String() string {
 	return fmt.Sprintf("%s:%d", n.Host, n.Port)
 }
 
+type nodeByName []Node
+
+func (u nodeByName) Len() int {
+
+	return len(u)
+}
+func (u nodeByName) Swap(i, j int) {
+
+	u[i], u[j] = u[j], u[i]
+}
+func (u nodeByName) Less(i, j int) bool {
+
+	return u[i].Host < u[j].Host
+}
+
 // TelnetConfiguration - contains the telnet connection configuration
 type TelnetConfiguration struct {
 
