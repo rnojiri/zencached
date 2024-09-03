@@ -46,61 +46,15 @@ func (u nodeByName) Len() int {
 
 	return len(u)
 }
+
 func (u nodeByName) Swap(i, j int) {
 
 	u[i], u[j] = u[j], u[i]
 }
+
 func (u nodeByName) Less(i, j int) bool {
 
 	return u[i].Host < u[j].Host
-}
-
-// TelnetConfiguration - contains the telnet connection configuration
-type TelnetConfiguration struct {
-
-	// ReconnectionTimeout - the time duration between connection retries
-	ReconnectionTimeout time.Duration
-
-	// MaxWriteTimeout - the max time duration to wait a write operation
-	MaxWriteTimeout time.Duration
-
-	// MaxReadTimeout - the max time duration to wait a read operation
-	MaxReadTimeout time.Duration
-
-	// HostConnectionTimeout - the max time duration to wait to connect to a host
-	HostConnectionTimeout time.Duration
-
-	// MaxWriteRetries - the maximum number of write retries
-	MaxWriteRetries int
-
-	// ReadBufferSize - the size of the read buffer in bytes
-	ReadBufferSize int
-
-	// TelnetMetricsCollector - collects metrics related with telnet
-	TelnetMetricsCollector TelnetMetricsCollector
-}
-
-func (tc *TelnetConfiguration) setDefaults() {
-
-	if tc.ReconnectionTimeout == 0 {
-		tc.ReconnectionTimeout = time.Second
-	}
-
-	if tc.MaxWriteTimeout == 0 {
-		tc.MaxWriteTimeout = time.Second
-	}
-
-	if tc.MaxReadTimeout == 0 {
-		tc.MaxReadTimeout = time.Second
-	}
-
-	if tc.ReadBufferSize < 8192 { // less than 8kb of read buffer is bad
-		tc.ReadBufferSize = 8192
-	}
-
-	if tc.HostConnectionTimeout == 0 {
-		tc.HostConnectionTimeout = 5 * time.Second
-	}
 }
 
 // Telnet - the telnet structure
@@ -248,6 +202,7 @@ func (t *Telnet) Close() {
 		err = t.connection.Close()
 
 	} else {
+
 		start := time.Now()
 		err = t.connection.Close()
 		t.configuration.TelnetMetricsCollector.CloseElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
@@ -364,7 +319,7 @@ mainLoop:
 
 			responseSetIndex = j
 
-			if bytes.LastIndex(buffer[0:bytesRead], trs.ResponseSets[j]) != -1 {
+			if findLastIndexOfByteSlice(buffer[0:bytesRead], trs.ResponseSets[j]) != -1 {
 				break mainLoop
 			}
 		}
@@ -376,6 +331,40 @@ mainLoop:
 	}
 
 	return fullBuffer.Bytes(), trs.ResultTypes[responseSetIndex], nil
+}
+
+func findLastIndexOfByteSlice(s []byte, sep []byte) int {
+
+	if len(s) == 0 || len(sep) == 0 {
+		return -1
+	}
+
+	j := -1
+	lastIndexSep := len(sep) - 1
+
+	for i := len(s) - 1; i >= 0; i-- {
+
+		if j > -1 {
+
+			if s[i] == sep[j] && j == 0 {
+				return i
+			}
+
+			if s[i] != sep[j] {
+				j = -1
+				continue
+			}
+
+			j--
+			continue
+		}
+
+		if s[i] == sep[lastIndexSep] {
+			j = lastIndexSep - 1
+		}
+	}
+
+	return -1
 }
 
 // Read - reads the payload from the active connection

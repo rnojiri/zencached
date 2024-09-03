@@ -141,15 +141,40 @@ func ValidateKey(path, key []byte) error {
 	return nil
 }
 
-// renderStoreCmd - like Sprintf, but in bytes
-func (z *Zencached) renderStoreCmd(cmd MemcachedCommand, path, key, value []byte, ttl uint64) []byte {
+func (z *Zencached) compressIfConfigured(value []byte) ([]byte, error) {
 
-	length := strconv.Itoa(len(value))
+	var tvalue []byte
+	var err error
+
+	if z.compressionEnabled {
+
+		tvalue, err = z.dataCompressor.Compress(value)
+		if err != nil {
+			return nil, err
+		}
+
+	} else {
+
+		tvalue = value
+	}
+
+	return tvalue, nil
+}
+
+// renderStoreCmd - like Sprintf, but in bytes
+func (z *Zencached) renderStoreCmd(cmd MemcachedCommand, path, key, value []byte, ttl uint64) ([]byte, error) {
+
+	tvalue, err := z.compressIfConfigured(value)
+	if err != nil {
+		return nil, err
+	}
+
+	length := strconv.Itoa(len(tvalue))
 
 	ttlStr := strconv.FormatUint(ttl, 10)
 
 	buffer := bytes.Buffer{}
-	buffer.Grow(len(cmd) + len(path) + len(key) + len(value) + len(ttlStr) + len(length) + 4 + (len(doubleBreaks) * 2) + 1)
+	buffer.Grow(len(cmd) + len(path) + len(key) + len(tvalue) + len(ttlStr) + len(length) + 4 + (len(doubleBreaks) * 2) + 1)
 	buffer.Write(cmd)
 	buffer.WriteByte(whiteSpace)
 	buffer.Write(path)
@@ -161,10 +186,10 @@ func (z *Zencached) renderStoreCmd(cmd MemcachedCommand, path, key, value []byte
 	buffer.WriteByte(whiteSpace)
 	buffer.WriteString(length)
 	buffer.Write(doubleBreaks)
-	buffer.Write(value)
+	buffer.Write(tvalue)
 	buffer.Write(doubleBreaks)
 
-	return buffer.Bytes()
+	return buffer.Bytes(), nil
 }
 
 // Set - performs an storage set operation
@@ -254,11 +279,19 @@ func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 // baseStore - base storage function
 func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, value []byte, ttl uint64) (*OperationResult, error) {
 
+	renderedCmd, err := z.renderStoreCmd(cmd, path, key, value, ttl)
+	if err != nil {
+		return &OperationResult{
+			Type: ResultTypeError,
+			Node: nw.node,
+		}, err
+	}
+
 	job := cmdJob{
 		cmd:                  cmd,
 		beginResponseSet:     mcrStoredResponseSet,
 		endResponseSet:       mcrStoredResponseSet,
-		renderedCmd:          z.renderStoreCmd(cmd, path, key, value, ttl),
+		renderedCmd:          renderedCmd,
 		path:                 path,
 		key:                  key,
 		forceCacheMissMetric: true,
@@ -267,7 +300,10 @@ func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, 
 
 	result := z.addJobAndWait(nw, job)
 	if result.err != nil {
-		return nil, result.err
+		return &OperationResult{
+			Type: ResultTypeError,
+			Node: nw.node,
+		}, result.err
 	}
 
 	return &OperationResult{
@@ -331,6 +367,26 @@ func (z *Zencached) extractGetCmdValue(response []byte) (start, end int, err err
 	return
 }
 
+func (z *Zencached) decompressIfConfigured(value []byte) ([]byte, error) {
+
+	var tvalue []byte
+	var err error
+
+	if z.compressionEnabled {
+
+		tvalue, err = z.dataCompressor.Decompress(value)
+		if err != nil {
+			return nil, err
+		}
+
+	} else {
+
+		tvalue = value
+	}
+
+	return tvalue, nil
+}
+
 // baseGet - performs a get operation
 func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult, error) {
 
@@ -347,7 +403,10 @@ func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult
 
 	result := z.addJobAndWait(nw, job)
 	if result.err != nil {
-		return nil, result.err
+		return &OperationResult{
+			Type: ResultTypeError,
+			Node: nw.node,
+		}, result.err
 	}
 
 	if result.resultType != ResultTypeFound {
@@ -362,9 +421,14 @@ func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult
 		return nil, err
 	}
 
+	responseData, err := z.decompressIfConfigured(result.response[start:end])
+	if err != nil {
+		return nil, err
+	}
+
 	return &OperationResult{
 		Type: ResultTypeFound,
-		Data: result.response[start:end],
+		Data: responseData,
 		Node: nw.node,
 	}, nil
 }

@@ -13,70 +13,6 @@ import (
 // @author rnojiri
 //
 
-type GetNodeList func() ([]Node, error)
-
-// Configuration - has the main configuration
-type Configuration struct {
-	// Nodes - the default memcached nodes
-	Nodes []Node
-
-	// NumConnectionsPerNode - the number of connections for each memcached node
-	NumConnectionsPerNode int
-
-	// CommandExecutionBufferSize - the number of command execution jobs buffered
-	CommandExecutionBufferSize uint32
-
-	// NumNodeListRetries - the number of node listing retry after an error
-	NumNodeListRetries int
-
-	// RebalanceOnDisconnection - always rebalance aafter some disconnection
-	RebalanceOnDisconnection bool
-
-	// ZencachedMetricsCollector - a metrics interface to implement metric extraction
-	ZencachedMetricsCollector ZencachedMetricsCollector
-
-	// NodeListFunction - a custom node listing function that can be customizable
-	NodeListFunction GetNodeList
-
-	// NodeListRetryTimeout - time to wait for node listing retry after an error
-	NodeListRetryTimeout time.Duration
-
-	// TimedMetricsPeriod - send metrics after some period (if metrics are enabled)
-	TimedMetricsPeriod time.Duration
-
-	// DisableTimedMetrics - disables the automatic sending of metrics (if metrics are enabled)
-	DisableTimedMetrics bool
-
-	TelnetConfiguration
-}
-
-func (c *Configuration) setDefaults() {
-
-	if c.Nodes == nil {
-		c.Nodes = []Node{}
-	}
-
-	if c.NumConnectionsPerNode == 0 {
-		c.NumConnectionsPerNode = 1
-	}
-
-	if c.CommandExecutionBufferSize == 0 {
-		c.CommandExecutionBufferSize = 100
-	}
-
-	if c.NumNodeListRetries == 0 {
-		c.NumNodeListRetries = 1
-	}
-
-	if c.NodeListRetryTimeout == 0 {
-		c.NodeListRetryTimeout = time.Second
-	}
-
-	if c.TimedMetricsPeriod == 0 {
-		c.TimedMetricsPeriod = time.Minute
-	}
-}
-
 // Zencached - declares the main structure
 type Zencached struct {
 	configuration            *Configuration
@@ -89,6 +25,8 @@ type Zencached struct {
 	rebalanceChannel         chan struct{}
 	closeTimedMetricsChannel chan struct{}
 	metricsEnabled           bool
+	compressionEnabled       bool
+	dataCompressor           DataCompressor
 }
 
 // New - creates a new instance
@@ -100,9 +38,26 @@ func New(configuration *Configuration) (*Zencached, error) {
 		nodeWorkerArray:          nil,
 		configuration:            configuration,
 		logger:                   logh.CreateContextualLogger("pkg", "zencached"),
-		rebalanceChannel:         make(chan struct{}),
-		metricsEnabled:           !interfaceIsNil(configuration.ZencachedMetricsCollector),
+		rebalanceChannel:         make(chan struct{}, 1),
 		closeTimedMetricsChannel: make(chan struct{}, 1),
+		metricsEnabled:           !interfaceIsNil(configuration.ZencachedMetricsCollector),
+		dataCompressor:           nil,
+	}
+
+	if configuration.CompressionConfiguration.CompressionType != CompressionTypeNone {
+
+		var err error
+
+		z.dataCompressor, err = NewDataCompressor(
+			configuration.CompressionConfiguration.CompressionType,
+			configuration.CompressionConfiguration.CompressionLevel,
+		)
+
+		z.compressionEnabled = true
+
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if z.metricsEnabled && !z.configuration.DisableTimedMetrics {
@@ -256,9 +211,11 @@ func (z *Zencached) rebalance() {
 	}
 
 	if len(z.connectedNodes) == 0 {
+
 		if logh.WarnEnabled {
 			z.logger.Warn().Msg("no available nodes found to connect")
 		}
+
 		z.notAvailable.Store(true)
 
 		go func() {

@@ -61,7 +61,7 @@ func (ts *zencachedTestSuite) genericTestClusterStoreCommand(command string, sto
 			return
 		}
 
-		if !ts.Truef(bytes.Contains(response, value), "expected value to be stored on node: %d", i) {
+		if !ts.Equal(string(value), string(ts.extractValueFromRawTelnet(response)), "expected value to be stored on node: %d", i) {
 			return
 		}
 	}

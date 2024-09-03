@@ -3,6 +3,8 @@ module github.com/rnojiri/zencached
 go 1.22.3
 
 require (
+	github.com/brianvoe/gofakeit v3.18.0+incompatible
+	github.com/klauspost/compress v1.17.9
 	github.com/rnojiri/dockerh v1.2.0
 	github.com/rnojiri/logh v1.1.1
 	github.com/stretchr/testify v1.9.0
