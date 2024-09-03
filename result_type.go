@@ -12,4 +12,6 @@ const (
 	ResultTypeNotStored
 	ResultTypeStored
 	ResultTypeDeleted
+	ResultTypeCompressionError
+	ResultTypeDecompressionError
 )
