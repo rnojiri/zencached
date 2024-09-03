@@ -164,17 +164,12 @@ func (z *Zencached) compressIfConfigured(value []byte) ([]byte, error) {
 // renderStoreCmd - like Sprintf, but in bytes
 func (z *Zencached) renderStoreCmd(cmd MemcachedCommand, path, key, value []byte, ttl uint64) ([]byte, error) {
 
-	tvalue, err := z.compressIfConfigured(value)
-	if err != nil {
-		return nil, err
-	}
-
-	length := strconv.Itoa(len(tvalue))
+	length := strconv.Itoa(len(value))
 
 	ttlStr := strconv.FormatUint(ttl, 10)
 
 	buffer := bytes.Buffer{}
-	buffer.Grow(len(cmd) + len(path) + len(key) + len(tvalue) + len(ttlStr) + len(length) + 4 + (len(doubleBreaks) * 2) + 1)
+	buffer.Grow(len(cmd) + len(path) + len(key) + len(value) + len(ttlStr) + len(length) + 4 + (len(doubleBreaks) * 2) + 1)
 	buffer.Write(cmd)
 	buffer.WriteByte(whiteSpace)
 	buffer.Write(path)
@@ -186,7 +181,7 @@ func (z *Zencached) renderStoreCmd(cmd MemcachedCommand, path, key, value []byte
 	buffer.WriteByte(whiteSpace)
 	buffer.WriteString(length)
 	buffer.Write(doubleBreaks)
-	buffer.Write(tvalue)
+	buffer.Write(value)
 	buffer.Write(doubleBreaks)
 
 	return buffer.Bytes(), nil
@@ -279,7 +274,16 @@ func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 // baseStore - base storage function
 func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, value []byte, ttl uint64) (*OperationResult, error) {
 
-	renderedCmd, err := z.renderStoreCmd(cmd, path, key, value, ttl)
+	tvalue, err := z.compressIfConfigured(value)
+	if err != nil {
+		return &OperationResult{
+			Type: ResultTypeCompressionError,
+			Data: value,
+			Node: nw.node,
+		}, err
+	}
+
+	renderedCmd, err := z.renderStoreCmd(cmd, path, key, tvalue, ttl)
 	if err != nil {
 		return &OperationResult{
 			Type: ResultTypeError,
@@ -423,7 +427,11 @@ func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult
 
 	responseData, err := z.decompressIfConfigured(result.response[start:end])
 	if err != nil {
-		return nil, err
+		return &OperationResult{
+			Type: ResultTypeDecompressionError,
+			Data: result.response[start:end],
+			Node: nw.node,
+		}, err
 	}
 
 	return &OperationResult{
