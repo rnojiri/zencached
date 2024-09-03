@@ -131,6 +131,7 @@ func (ts *zencachedMetricsTestSuite) SetupSuite() {
 		[]zencached.Node{{Host: ts.memcachedHost, Port: memcachedMetricsPodPort}},
 		10, false,
 		ts.metrics, ts.telnetMetrics,
+		zencached.CompressionTypeNone,
 	)
 	if err != nil {
 		ts.T().Fatalf("expected no errors creating zencached: %v", err)

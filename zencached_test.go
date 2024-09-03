@@ -1,6 +1,7 @@
 package zencached_test
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"testing"
@@ -18,8 +19,10 @@ var defaultTTL uint64 = 60
 
 type zencachedTestSuite struct {
 	suite.Suite
-	instance *zencached.Zencached
-	config   *zencached.Configuration
+	instance           *zencached.Zencached
+	config             *zencached.Configuration
+	compressionType    zencached.CompressionType
+	compressorInstance zencached.DataCompressor
 }
 
 func (ts *zencachedTestSuite) SetupSuite() {
@@ -31,7 +34,15 @@ func (ts *zencachedTestSuite) SetupSuite() {
 	nodes := startMemcachedCluster()
 
 	var err error
-	ts.instance, ts.config, err = createZencached(nodes, 10, false, nil, nil)
+
+	switch ts.compressionType {
+	case zencached.CompressionTypeBase64:
+		ts.compressorInstance, err = zencached.NewDataCompressor(zencached.CompressionTypeBase64, 0)
+	case zencached.CompressionTypeZstandard:
+		ts.compressorInstance, err = zencached.NewDataCompressor(zencached.CompressionTypeZstandard, 5)
+	}
+
+	ts.instance, ts.config, err = createZencached(nodes, 10, false, nil, nil, ts.compressionType)
 	if err != nil {
 		ts.T().Fatalf("expected no errors creating zencached: %v", err)
 	}
@@ -45,11 +56,18 @@ func (ts *zencachedTestSuite) TearDownSuite() {
 }
 
 // createZencached - creates a new client
-func createZencached(nodes []zencached.Node, commandExecutionBufferSize uint32, rebalanceOnDisconnection bool, metricCollector zencached.ZencachedMetricsCollector, telnetMetricsCollector zencached.TelnetMetricsCollector) (*zencached.Zencached, *zencached.Configuration, error) {
+func createZencached(
+	nodes []zencached.Node,
+	commandExecutionBufferSize uint32,
+	rebalanceOnDisconnection bool,
+	metricCollector zencached.ZencachedMetricsCollector,
+	telnetMetricsCollector zencached.TelnetMetricsCollector,
+	compressionType zencached.CompressionType,
+) (*zencached.Zencached, *zencached.Configuration, error) {
 
 	c := &zencached.Configuration{
 		Nodes:                      nodes,
-		NumConnectionsPerNode:      1,
+		NumConnectionsPerNode:      3,
 		TelnetConfiguration:        *createTelnetConf(telnetMetricsCollector),
 		ZencachedMetricsCollector:  metricCollector,
 		RebalanceOnDisconnection:   rebalanceOnDisconnection,
@@ -57,6 +75,10 @@ func createZencached(nodes []zencached.Node, commandExecutionBufferSize uint32, 
 		NodeListRetryTimeout:       2 * time.Second,
 		CommandExecutionBufferSize: commandExecutionBufferSize,
 		DisableTimedMetrics:        true, // using this to disable the automatic metrics
+		CompressionConfiguration: zencached.CompressionConfiguration{
+			CompressionType:  compressionType,
+			CompressionLevel: 5,
+		},
 	}
 
 	z, err := zencached.New(c)
@@ -224,7 +246,21 @@ func (ts *zencachedTestSuite) TestAddCommand() {
 // rawSetKey - sets a key on memcached using raw command
 func (ts *zencachedTestSuite) rawSetKey(telnetConn *zencached.Telnet, path, key, value string) {
 
-	err := telnetConn.Send([]byte(fmt.Sprintf("set %s%s 0 %d %d\r\n%s\r\n", path, key, 60, len(value), value)))
+	// must compress or encode if the configuration is enabled before set the value
+
+	var err error
+	tvalue := []byte(value)
+
+	if ts.compressionType != zencached.CompressionTypeNone {
+
+		tvalue, err = ts.compressorInstance.Compress(tvalue)
+		if !ts.NoError(err, "expected no error compressing value") {
+			return
+		}
+
+	}
+
+	err = telnetConn.Send([]byte(fmt.Sprintf("set %s%s 0 %d %d\r\n%s\r\n", path, key, 60, len(tvalue), string(tvalue))))
 	if !ts.NoError(err, "expected no error sending set command") {
 		return
 	}
@@ -264,7 +300,7 @@ func (ts *zencachedTestSuite) TestGetCommand() {
 		ts.rawSetKey(t, path, key, value)
 
 		result, err := ts.instance.Get(route, []byte(path), []byte(key))
-		if !ts.NoError(err, "expected no error storing key") {
+		if !ts.NoError(err, "expected no error retrieving key") {
 			return
 		}
 
@@ -424,7 +460,45 @@ func (ts *zencachedTestSuite) TestVersionCommand() {
 	ts.Equal(strings.Split(strings.TrimSpace(string(payload)), " ")[1], string(result.Data), "expected same version")
 }
 
+func (ts *zencachedTestSuite) extractValueFromRawTelnet(response []byte) []byte {
+
+	extractedArray := bytes.Split(response, []byte{'\r', '\n'})
+	if len(extractedArray) != 4 {
+		ts.Fail("expected 4 lines of response")
+		return nil
+	}
+
+	var err error
+	extractedValue := extractedArray[1]
+
+	if ts.compressionType != zencached.CompressionTypeNone {
+		extractedValue, err = ts.compressorInstance.Decompress(extractedValue)
+		if !ts.NoError(err, "expected success decompressing data") {
+			return nil
+		}
+	}
+
+	return extractedValue
+}
+
 func TestZencachedSuite(t *testing.T) {
 
 	suite.Run(t, new(zencachedTestSuite))
+}
+
+func TestBase64ZencachedSuite(t *testing.T) {
+
+	suite.Run(t,
+		&zencachedTestSuite{
+			compressionType: zencached.CompressionTypeBase64,
+		},
+	)
+}
+func TestZstandardZencachedSuite(t *testing.T) {
+
+	suite.Run(t,
+		&zencachedTestSuite{
+			compressionType: zencached.CompressionTypeZstandard,
+		},
+	)
 }
