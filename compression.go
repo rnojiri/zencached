@@ -64,6 +64,7 @@ var _ DataCompressor = (*base64Encoder)(nil)
 
 type zstdCompression struct {
 	compressionLevel zstd.EncoderLevel
+	base64Encoder    base64Encoder
 }
 
 func (dc zstdCompression) Compress(data []byte) ([]byte, error) {
@@ -78,7 +79,12 @@ func (dc zstdCompression) Compress(data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	_, err = encoder.Write(data)
+	b64Data, err := dc.base64Encoder.Compress(data)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = encoder.Write(b64Data)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +114,12 @@ func (dc zstdCompression) Decompress(data []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	return decompressed.Bytes(), nil
+	b64Data, err := dc.base64Encoder.Decompress(decompressed.Bytes())
+	if err != nil {
+		return nil, err
+	}
+
+	return b64Data, nil
 }
 
 var _ DataCompressor = (*base64Encoder)(nil)
