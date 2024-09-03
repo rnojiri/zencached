@@ -53,7 +53,6 @@ func (tc *TelnetConfiguration) setDefaults() {
 // CompressionConfiguration - compression configuration
 type CompressionConfiguration struct {
 	CompressionType  CompressionType
-	CompressKeys     bool
 	CompressionLevel int
 }
 
