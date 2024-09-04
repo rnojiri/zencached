@@ -288,21 +288,20 @@ func (t *Telnet) Send(command ...[]byte) error {
 }
 
 // read - reads the payload from the active connection
-func (t *Telnet) read(trs TelnetResponseSet) ([]byte, ResultType, error) {
+func (t *Telnet) read(responseSet TelnetResponseSet) ([]byte, ResultType, error) {
 
 	err := t.connection.SetReadDeadline(time.Now().Add(t.configuration.MaxReadTimeout))
 	if err != nil {
 		if logh.ErrorEnabled {
 			t.logger.Error().Msg(fmt.Sprintf("error setting read deadline: %s", err.Error()))
 		}
-		return nil, ResultTypeNone, err
+		return nil, ResultTypeError, err
 	}
 
 	fullBuffer := bytes.Buffer{}
 	buffer := make([]byte, t.configuration.ReadBufferSize)
 	var bytesRead, fullBytes int
-
-	responseSetIndex := 0
+	resultType := ResultTypeNone
 
 mainLoop:
 	for {
@@ -313,13 +312,16 @@ mainLoop:
 
 		fullBytes += bytesRead
 
-		fullBuffer.Write((buffer[:bytesRead]))
+		bufferPart := buffer[:bytesRead]
 
-		for j := 0; j < len(trs.ResponseSets); j++ {
+		_, err = fullBuffer.Write(bufferPart)
+		if err != nil {
+			break mainLoop
+		}
 
-			responseSetIndex = j
-
-			if findLastIndexOfByteSlice(buffer[0:bytesRead], trs.ResponseSets[j]) != -1 {
+		for i, ts := range responseSet.ResponseSets {
+			if findLastIndexOfByteSlice(bufferPart, ts) != -1 {
+				resultType = responseSet.ResultTypes[i]
 				break mainLoop
 			}
 		}
@@ -327,10 +329,10 @@ mainLoop:
 
 	if err != nil && err != io.EOF {
 		t.logConnectionError(err, read)
-		return nil, ResultTypeNone, err
+		return nil, ResultTypeError, err
 	}
 
-	return fullBuffer.Bytes(), trs.ResultTypes[responseSetIndex], nil
+	return fullBuffer.Bytes(), resultType, nil
 }
 
 func findLastIndexOfByteSlice(s []byte, sep []byte) int {
@@ -368,24 +370,24 @@ func findLastIndexOfByteSlice(s []byte, sep []byte) int {
 }
 
 // Read - reads the payload from the active connection
-func (t *Telnet) Read(trs TelnetResponseSet) ([]byte, ResultType, error) {
+func (t *Telnet) Read(responseSet TelnetResponseSet) ([]byte, ResultType, error) {
 
 	var data []byte
-	var rt ResultType
+	var resultType ResultType
 	var err error
 
 	if !t.metricsEnabled {
 
-		data, rt, err = t.read(trs)
+		data, resultType, err = t.read(responseSet)
 
 	} else {
 
 		start := time.Now()
-		data, rt, err = t.read(trs)
+		data, resultType, err = t.read(responseSet)
 		t.configuration.TelnetMetricsCollector.ReadElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
 	}
 
-	return data, rt, err
+	return data, resultType, err
 }
 
 // writePayload - writes the payload
