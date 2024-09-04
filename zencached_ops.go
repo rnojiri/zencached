@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -346,29 +347,80 @@ func (z *Zencached) Get(routerHash, path, key []byte) (*OperationResult, error) 
 }
 
 // extractGetCmdValue - extracts a value from the response
-func (z *Zencached) extractGetCmdValue(response []byte) (start, end int, err error) {
+func (z *Zencached) extractGetCmdValue(response []byte) ([]byte, error) {
 
-	start = -1
-	end = -1
+	bb := strings.Builder{}
+	i := 0
 
-	for i := 0; i < len(response); i++ {
-		if start == -1 && response[i] == lineBreaksN {
-			start = i + 1
-		} else if start >= 0 && response[i] == lineBreaksR {
-			end = i
+	for ; i < len(mcrValue); i++ {
+
+		if response[i] != mcrValue[i] {
+			return nil, fmt.Errorf("no value protocol found")
+		}
+
+		bb.WriteByte(response[i])
+	}
+
+	if response[i] != whiteSpace {
+		return nil, fmt.Errorf("expecting a white space before the key")
+	}
+
+	i++
+
+	found := false
+
+	// ignore the key
+	for ; i < len(response); i++ {
+		if response[i] == whiteSpace {
+			found = true
+			i++
 			break
 		}
+		bb.WriteByte(response[i])
 	}
 
-	if start == -1 {
-		err = fmt.Errorf("no value found")
+	if !found {
+		return nil, fmt.Errorf("expecting a white space after the key")
 	}
 
-	if end == -1 {
-		end = len(response) - 1
+	// ignore the protocol flag
+	for ; i < len(response); i++ {
+		if response[i] == whiteSpace {
+			found = true
+			i++
+			break
+		}
+		bb.WriteByte(response[i])
 	}
 
-	return
+	if !found {
+		return nil, fmt.Errorf("expecting a white space after the protocol flag")
+	}
+
+	found = false
+	startLen := i
+	endLen := 0
+
+	for ; i < len(response); i++ {
+		if (response[i] == lineBreaksN || response[i] == lineBreaksR) && (response[i+1] == lineBreaksN || response[i+1] == lineBreaksR) {
+			endLen = i
+			i += 2
+			found = true
+			break
+		}
+		bb.WriteByte(response[i])
+	}
+
+	if !found {
+		return nil, fmt.Errorf("expecting a line break after the value length")
+	}
+
+	valueLen, err := strconv.Atoi(string(response[startLen:endLen]))
+	if err != nil {
+		return nil, fmt.Errorf("error converting value length in number: %s", err)
+	}
+
+	return response[i : i+valueLen], nil
 }
 
 func (z *Zencached) decompressIfConfigured(value []byte) ([]byte, error) {
@@ -420,16 +472,16 @@ func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult
 		}, nil
 	}
 
-	start, end, err := z.extractGetCmdValue([]byte(result.response))
+	extractedValue, err := z.extractGetCmdValue(result.response)
 	if err != nil {
 		return nil, err
 	}
 
-	responseData, err := z.decompressIfConfigured(result.response[start:end])
+	responseData, err := z.decompressIfConfigured(extractedValue)
 	if err != nil {
 		return &OperationResult{
 			Type: ResultTypeDecompressionError,
-			Data: result.response[start:end],
+			Data: extractedValue,
 			Node: nw.node,
 		}, err
 	}
