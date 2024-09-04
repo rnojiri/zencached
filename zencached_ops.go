@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -349,7 +348,6 @@ func (z *Zencached) Get(routerHash, path, key []byte) (*OperationResult, error) 
 // extractGetCmdValue - extracts a value from the response
 func (z *Zencached) extractGetCmdValue(response []byte) ([]byte, error) {
 
-	bb := strings.Builder{}
 	i := 0
 
 	for ; i < len(mcrValue); i++ {
@@ -357,8 +355,6 @@ func (z *Zencached) extractGetCmdValue(response []byte) ([]byte, error) {
 		if response[i] != mcrValue[i] {
 			return nil, fmt.Errorf("no value protocol found")
 		}
-
-		bb.WriteByte(response[i])
 	}
 
 	if response[i] != whiteSpace {
@@ -376,7 +372,6 @@ func (z *Zencached) extractGetCmdValue(response []byte) ([]byte, error) {
 			i++
 			break
 		}
-		bb.WriteByte(response[i])
 	}
 
 	if !found {
@@ -390,7 +385,6 @@ func (z *Zencached) extractGetCmdValue(response []byte) ([]byte, error) {
 			i++
 			break
 		}
-		bb.WriteByte(response[i])
 	}
 
 	if !found {
@@ -408,7 +402,6 @@ func (z *Zencached) extractGetCmdValue(response []byte) ([]byte, error) {
 			found = true
 			break
 		}
-		bb.WriteByte(response[i])
 	}
 
 	if !found {
@@ -420,7 +413,14 @@ func (z *Zencached) extractGetCmdValue(response []byte) ([]byte, error) {
 		return nil, fmt.Errorf("error converting value length in number: %s", err)
 	}
 
-	return response[i : i+valueLen], nil
+	buffer := bytes.Buffer{}
+	buffer.Grow(valueLen)
+
+	for ; i < i+valueLen; i++ {
+		buffer.WriteByte(response[i])
+	}
+
+	return buffer.Bytes(), nil
 }
 
 func (z *Zencached) decompressIfConfigured(value []byte) ([]byte, error) {
