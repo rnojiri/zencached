@@ -62,12 +62,7 @@ var (
 	}
 
 	mcrGetCheckBeginResponseSet TelnetResponseSet = TelnetResponseSet{
-		ResponseSets: [][]byte{mcrValue, mcrEnd},
-		ResultTypes:  []ResultType{ResultTypeFound, ResultTypeNotFound},
-	}
-
-	mcrGetCheckEndResponseSet TelnetResponseSet = TelnetResponseSet{
-		ResponseSets: [][]byte{mcrValue, mcrEnd},
+		ResponseSets: [][]byte{mcrEnd},
 		ResultTypes:  []ResultType{ResultTypeFound, ResultTypeNotFound},
 	}
 
@@ -293,8 +288,7 @@ func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, 
 
 	job := cmdJob{
 		cmd:                  cmd,
-		beginResponseSet:     mcrStoredResponseSet,
-		endResponseSet:       mcrStoredResponseSet,
+		responseSet:          mcrStoredResponseSet,
 		renderedCmd:          renderedCmd,
 		path:                 path,
 		key:                  key,
@@ -349,6 +343,19 @@ func (z *Zencached) Get(routerHash, path, key []byte) (*OperationResult, error) 
 func (z *Zencached) extractGetCmdValue(response []byte) ([]byte, error) {
 
 	i := 0
+	end := true
+
+	for ; i < len(mcrEnd); i++ {
+
+		if response[i] != mcrEnd[i] {
+			end = false
+			break
+		}
+	}
+
+	if end {
+		return nil, nil
+	}
 
 	for ; i < len(mcrValue); i++ {
 
@@ -413,14 +420,7 @@ func (z *Zencached) extractGetCmdValue(response []byte) ([]byte, error) {
 		return nil, fmt.Errorf("error converting value length in number: %s", err)
 	}
 
-	buffer := bytes.Buffer{}
-	buffer.Grow(valueLen)
-
-	for ; i < i+valueLen; i++ {
-		buffer.WriteByte(response[i])
-	}
-
-	return buffer.Bytes(), nil
+	return response[i : i+valueLen], nil
 }
 
 func (z *Zencached) decompressIfConfigured(value []byte) ([]byte, error) {
@@ -448,8 +448,7 @@ func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult
 
 	job := cmdJob{
 		cmd:                  Get,
-		beginResponseSet:     mcrGetCheckBeginResponseSet,
-		endResponseSet:       mcrGetCheckEndResponseSet,
+		responseSet:          mcrGetCheckBeginResponseSet,
 		renderedCmd:          z.renderKeyOnlyCmd(Get, path, key),
 		path:                 path,
 		key:                  key,
@@ -474,7 +473,18 @@ func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult
 
 	extractedValue, err := z.extractGetCmdValue(result.response)
 	if err != nil {
-		return nil, err
+		return &OperationResult{
+			Type: ResultTypeError,
+			Node: nw.node,
+		}, err
+	}
+
+	if len(extractedValue) == 0 {
+		return &OperationResult{
+			Type: ResultTypeNotFound,
+			Data: nil,
+			Node: nw.node,
+		}, nil
 	}
 
 	responseData, err := z.decompressIfConfigured(extractedValue)
@@ -513,8 +523,7 @@ func (z *Zencached) baseDelete(nw *nodeWorkers, path, key []byte) (*OperationRes
 
 	job := cmdJob{
 		cmd:                  Delete,
-		beginResponseSet:     mcrDeletedResponseSet,
-		endResponseSet:       mcrDeletedResponseSet,
+		responseSet:          mcrDeletedResponseSet,
 		renderedCmd:          z.renderKeyOnlyCmd(Delete, path, key),
 		path:                 path,
 		key:                  key,
@@ -580,8 +589,7 @@ func (z *Zencached) baseVersion(nw *nodeWorkers) (*OperationResult, error) {
 
 	job := cmdJob{
 		cmd:                  Version,
-		beginResponseSet:     mcrVersionResponseSet,
-		endResponseSet:       mcrVersionResponseSet,
+		responseSet:          mcrVersionResponseSet,
 		renderedCmd:          z.renderNoParameterCmd(Version),
 		forceCacheMissMetric: true,
 		response:             make(chan cmdResponse),

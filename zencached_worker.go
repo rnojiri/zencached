@@ -1,9 +1,7 @@
 package zencached
 
 import (
-	"bytes"
 	"errors"
-	"fmt"
 	"math/rand"
 	"strconv"
 	"sync/atomic"
@@ -18,11 +16,11 @@ type cmdResponse struct {
 }
 
 type cmdJob struct {
-	cmd                              MemcachedCommand
-	beginResponseSet, endResponseSet TelnetResponseSet
-	renderedCmd, path, key           []byte
-	forceCacheMissMetric             bool
-	response                         chan cmdResponse
+	cmd                    MemcachedCommand
+	responseSet            TelnetResponseSet
+	renderedCmd, path, key []byte
+	forceCacheMissMetric   bool
+	response               chan cmdResponse
 }
 
 type nodeWorkers struct {
@@ -90,7 +88,7 @@ func (nw *nodeWorkers) work(telnetConn *Telnet, workerID int) {
 
 	for job := range nw.jobs {
 
-		response := nw.sendAndReadResponse(telnetConn, job.beginResponseSet, job.endResponseSet, job.renderedCmd)
+		response := nw.sendAndReadResponse(telnetConn, job.responseSet, job.renderedCmd)
 
 		job.response <- response
 
@@ -185,10 +183,10 @@ func (z *Zencached) GetConnectedNodeWorkers(routerHash, path, key []byte) (nw *n
 // checkResponse - checks the memcached response
 func (nw *nodeWorkers) checkResponse(
 	telnetConn *Telnet,
-	checkReadSet, checkResponseSet TelnetResponseSet,
+	responseSet TelnetResponseSet,
 ) cmdResponse {
 
-	response, resultType, err := telnetConn.Read(checkReadSet)
+	response, resultType, err := telnetConn.Read(responseSet)
 	if err != nil {
 		return cmdResponse{resultType, nil, err}
 	}
@@ -197,26 +195,26 @@ func (nw *nodeWorkers) checkResponse(
 		return cmdResponse{resultType, nil, ErrMemcachedNoResponse}
 	}
 
-	if !bytes.HasPrefix(response, checkResponseSet.ResponseSets[0]) {
-		if !bytes.Contains(response, checkResponseSet.ResponseSets[1]) {
-			return cmdResponse{resultType, nil, fmt.Errorf("%w: %s", ErrMemcachedInvalidResponse, string(response))}
-		}
+	// if !bytes.HasPrefix(response, checkResponseSet.ResponseSets[0]) {
+	// 	if !bytes.Contains(response, checkResponseSet.ResponseSets[1]) {
+	// 		return cmdResponse{resultType, nil, fmt.Errorf("%w: %s", ErrMemcachedInvalidResponse, string(response))}
+	// 	}
 
-		return cmdResponse{resultType, response, nil}
-	}
+	// 	return cmdResponse{resultType, response, nil}
+	// }
 
 	return cmdResponse{resultType, response, nil}
 }
 
 func (nw *nodeWorkers) sendAndReadResponse(
 	telnetConn *Telnet,
-	beginResponseSet, endResponseSet TelnetResponseSet,
+	responseSet TelnetResponseSet,
 	renderedCmd []byte,
 ) cmdResponse {
 
 	err := telnetConn.Send(renderedCmd)
 	if err == nil {
-		return nw.checkResponse(telnetConn, beginResponseSet, endResponseSet)
+		return nw.checkResponse(telnetConn, responseSet)
 	}
 
 	return cmdResponse{ResultTypeNone, nil, err}

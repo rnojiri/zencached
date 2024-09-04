@@ -41,6 +41,9 @@ func (ts *zencachedTestSuite) SetupSuite() {
 	case zencached.CompressionTypeZstandard:
 		ts.compressorInstance, err = zencached.NewDataCompressor(zencached.CompressionTypeZstandard, 5)
 	}
+	if err != nil {
+		panic(err)
+	}
 
 	ts.instance, ts.config, err = createZencached(nodes, 10, false, nil, nil, ts.compressionType)
 	if err != nil {
@@ -479,6 +482,47 @@ func (ts *zencachedTestSuite) extractValueFromRawTelnet(response []byte) []byte 
 	}
 
 	return extractedValue
+}
+
+// TestGetCommandHugeData - tests the get command of huge data
+func (ts *zencachedTestSuite) TestGetCommandHugeData() {
+
+	path := "path"
+	key := "huge-data"
+
+	nw, _, err := ts.instance.GetConnectedNodeWorkers(nil, []byte(path), []byte(key))
+	if !ts.NoError(err, "expects no error getting a connection") {
+		return
+	}
+
+	t, err := nw.NewTelnetFromNode()
+	if !ts.NoError(err, "expected no error creating telnet connection") {
+		return
+	}
+
+	defer t.Close()
+
+	hugeData := strings.Builder{}
+	hugeData.WriteString("START")
+
+	for i := 0; i < 1000; i++ {
+		hugeData.WriteString("123456789")
+	}
+
+	hugeData.WriteString("FINAL")
+
+	ts.rawSetKey(t, path, key, hugeData.String())
+
+	result, err := ts.instance.Get(nil, []byte(path), []byte(key))
+	if !ts.NoError(err, "expected no error retrieving key") {
+		return
+	}
+
+	if !ts.Equal(zencached.ResultTypeFound, result.Type, "expected value from key \"%s\" to be found", key) {
+		return
+	}
+
+	ts.Equal(hugeData.String(), string(result.Data), "expected values to be equal")
 }
 
 func TestZencachedSuite(t *testing.T) {
