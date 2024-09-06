@@ -117,6 +117,8 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceRemovingNode() {
 
 	ts.instance.Rebalance()
 
+	<-time.After(3 * time.Second)
+
 	after := ts.instance.GetConnectedNodes()
 	ts.ElementsMatch(minusTwo, after, "expected same nodes")
 
