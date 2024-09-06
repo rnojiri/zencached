@@ -291,7 +291,7 @@ func (t *Telnet) Send(command ...[]byte) error {
 // read - reads the payload from the active connection
 func (t *Telnet) read(responseSet TelnetResponseSet) ([]byte, ResultType, error) {
 
-	err := t.connection.SetReadDeadline(time.Now().Add(1 * time.Second))
+	err := t.connection.SetReadDeadline(time.Now().Add(t.configuration.MaxReadTimeout))
 	if err != nil {
 		if logh.ErrorEnabled {
 			t.logger.Error().Msg(fmt.Sprintf("error setting read deadline: %s", err.Error()))
@@ -399,7 +399,7 @@ func (t *Telnet) writePayload(payload []byte) bool {
 		return false
 	}
 
-	err := t.connection.SetWriteDeadline(time.Now().Add(1 * time.Second))
+	err := t.connection.SetWriteDeadline(time.Now().Add(t.configuration.MaxWriteTimeout))
 	if err != nil {
 		if logh.ErrorEnabled {
 			t.logger.Error().Err(err).Msg("error setting write deadline")
