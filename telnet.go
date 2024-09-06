@@ -177,14 +177,6 @@ func (t *Telnet) dial() error {
 		return err
 	}
 
-	err = t.connection.SetDeadline(time.Now().Add(t.configuration.ReconnectionTimeout))
-	if err != nil {
-		if logh.ErrorEnabled {
-			t.logger.Error().Err(err).Msg("error setting connection's deadline")
-		}
-		return err
-	}
-
 	return nil
 }
 
@@ -291,14 +283,7 @@ func (t *Telnet) Send(command ...[]byte) error {
 // read - reads the payload from the active connection
 func (t *Telnet) read(responseSet TelnetResponseSet) ([]byte, ResultType, error) {
 
-	err := t.connection.SetReadDeadline(time.Now().Add(t.configuration.MaxReadTimeout))
-	if err != nil {
-		if logh.ErrorEnabled {
-			t.logger.Error().Msg(fmt.Sprintf("error setting read deadline: %s", err.Error()))
-		}
-		return nil, ResultTypeError, err
-	}
-
+	var err error
 	fullBuffer := bytes.Buffer{}
 	buffer := make([]byte, t.configuration.ReadBufferSize)
 	var bytesRead, fullBytes int

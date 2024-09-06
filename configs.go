@@ -11,9 +11,6 @@ type TelnetConfiguration struct {
 	// MaxWriteTimeout - the max time duration to wait a write operation
 	MaxWriteTimeout time.Duration
 
-	// MaxReadTimeout - the max time duration to wait a read operation
-	MaxReadTimeout time.Duration
-
 	// HostConnectionTimeout - the max time duration to wait to connect to a host
 	HostConnectionTimeout time.Duration
 
@@ -35,10 +32,6 @@ func (tc *TelnetConfiguration) setDefaults() {
 
 	if tc.MaxWriteTimeout < time.Second {
 		tc.MaxWriteTimeout = time.Second
-	}
-
-	if tc.MaxReadTimeout < time.Second {
-		tc.MaxReadTimeout = time.Second
 	}
 
 	if tc.ReadBufferSize < 8192 { // less than 8kb of read buffer is bad
