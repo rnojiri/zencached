@@ -117,6 +117,8 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceRemovingNode() {
 
 	ts.instance.Rebalance()
 
+	<-time.After(5 * time.Second)
+
 	after := ts.instance.GetConnectedNodes()
 	ts.ElementsMatch(minusTwo, after, "expected same nodes")
 
@@ -181,7 +183,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceAddingNode() {
 // TestClusterNodeDown - tests the cluster  recovery when a node is down
 func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 
-	_, err := ts.instance.Get([]byte{10, 200}, []byte("p"), []byte("k"))
+	_, err := ts.instance.Get([]byte{3}, []byte("p"), []byte("k"))
 	if !ts.NoError(err, "expected no error executing get in node zero") {
 		return
 	}
@@ -191,7 +193,9 @@ func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 		return
 	}
 
-	_, err = ts.instance.Get([]byte{10, 200}, []byte("p"), []byte("k"))
+	<-time.After(2 * time.Second)
+
+	_, err = ts.instance.Get([]byte{3}, []byte("p"), []byte("k"))
 	if !isDisconnectionError(ts.T(), err) {
 		return
 	}
@@ -201,7 +205,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 		return
 	}
 
-	<-time.After(5 * time.Second)
+	<-time.After(2 * time.Second)
 
 	ts.instance.Rebalance()
 
@@ -243,7 +247,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 	ts.instance.Rebalance()
 
 	for i := 0; i < 100; i++ {
-		_, err = ts.instance.Get(nil, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
+		_, err = ts.instance.Get([]byte{byte(i)}, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
 		if !isDisconnectionError(ts.T(), err) {
 			return
 		}

@@ -19,7 +19,6 @@ type cmdJob struct {
 	cmd                    MemcachedCommand
 	responseSet            TelnetResponseSet
 	renderedCmd, path, key []byte
-	forceCacheMissMetric   bool
 	response               chan cmdResponse
 }
 
@@ -81,7 +80,7 @@ func (nw *nodeWorkers) terminate() {
 
 func (nw *nodeWorkers) sendNodeTimedMetrics() {
 
-	nw.configuration.ZencachedMetricsCollector.NumResourcesChangeEvent(nw.node.Host, uint32(nw.resources.numAvailableResources()))
+	nw.configuration.ZencachedMetricsCollector.NumResourcesChangeEvent(nw.node.Host, nw.resources.numAvailableResources())
 }
 
 func (nw *nodeWorkers) work(telnetConn *Telnet, workerID int) {
@@ -194,14 +193,6 @@ func (nw *nodeWorkers) checkResponse(
 	if len(response) == 0 {
 		return cmdResponse{resultType, nil, ErrMemcachedNoResponse}
 	}
-
-	// if !bytes.HasPrefix(response, checkResponseSet.ResponseSets[0]) {
-	// 	if !bytes.Contains(response, checkResponseSet.ResponseSets[1]) {
-	// 		return cmdResponse{resultType, nil, fmt.Errorf("%w: %s", ErrMemcachedInvalidResponse, string(response))}
-	// 	}
-
-	// 	return cmdResponse{resultType, response, nil}
-	// }
 
 	return cmdResponse{resultType, response, nil}
 }

@@ -37,7 +37,7 @@ func (r *resourceChannel) terminate() {
 	close(r.channel)
 }
 
-func (r *resourceChannel) numAvailableResources() uint32 {
+func (r *resourceChannel) numAvailableResources() int {
 
-	return uint32(len(r.channel))
+	return len(r.channel)
 }

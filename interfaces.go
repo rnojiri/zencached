@@ -65,36 +65,42 @@ type ZencachedMetricsCollector interface {
 	// NodeListingError - signalizes a node listing error
 	NodeListingError()
 
-	// NodeListingElapsedTime - signalizes a node listing elapsed time
+	// NodeListingElapsedTime - signalizes a node listing elapsed time (nanoseconds)
 	NodeListingElapsedTime(elapsedTime int64)
 
-	// NodeRebalanceElapsedTime - signalizes a node rebalance event
+	// NodeRebalanceElapsedTime - signalizes a node rebalance event (nanoseconds)
 	NodeRebalanceElapsedTime(elapsedTime int64)
 
 	// NumResourcesChangeEvent - signalizes a node rebalance event
-	NumResourcesChangeEvent(node string, numResources uint32)
+	NumResourcesChangeEvent(node string, numResources int)
 }
 
 // TelnetMetricsCollector - the interface to collect metrics from telnet
 type TelnetMetricsCollector interface {
 
-	// ResolveAddressElapsedTime - the time took to resolve a name address
+	// ResolveAddressElapsedTime - the time took to resolve a name address (nanoseconds)
 	ResolveAddressElapsedTime(node string, elapsedTime int64)
 
-	// DialElapsedTime - the time took to dial to a node
+	// DialElapsedTime - the time took to dial to a node (nanoseconds)
 	DialElapsedTime(node string, elapsedTime int64)
 
-	// CloseElapsedTime - the time took to disconnect from a node
+	// CloseElapsedTime - the time took to disconnect from a node (nanoseconds)
 	CloseElapsedTime(node string, elapsedTime int64)
 
-	// SendElapsedTime - the time took to send data (full process with dial and close if needed)
+	// SendElapsedTime - the time took to send data (full process with dial and close if needed) (nanoseconds)
 	SendElapsedTime(node string, elapsedTime int64)
 
-	// WriteElapsedTime - the time took to write data
+	// WriteElapsedTime - the time took to write data (nanoseconds)
 	WriteElapsedTime(node string, elapsedTime int64)
 
-	// ReadElapsedTime - the time took to read data
+	// ReadElapsedTime - the time took to read data (nanoseconds)
 	ReadElapsedTime(node string, elapsedTime int64)
+
+	// ReadDataSize - data read size (bytes)
+	ReadDataSize(node string, sizeInBytes int)
+
+	// WriteDataSize - data write size (bytes)
+	WriteDataSize(node string, sizeInBytes int)
 }
 
 type ZError interface {

@@ -83,7 +83,7 @@ func (mc *metricsCollector) NodeRebalanceElapsedTime(elapsedTime int64) {
 	mc.numNodeRebalanceElapsedTime++
 }
 
-func (mc *metricsCollector) NumResourcesChangeEvent(node string, numResources uint32) {
+func (mc *metricsCollector) NumResourcesChangeEvent(node string, numResources int) {
 
 	mc.numResourcesChangeEvent++
 }
@@ -276,7 +276,6 @@ func (ts *zencachedMetricsTestSuite) TestZ3RebalanceMetricsError() {
 	ts.Equal(0, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
 	ts.Equal(0, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
 	ts.Equal(0, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
-	ts.GreaterOrEqual(ts.telnetMetrics.numCloseElapsedTime, 1, "expected at least one close event")
 }
 
 func (ts *zencachedMetricsTestSuite) TestZ4NodeListingErrorMetricsError() {

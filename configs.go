@@ -33,11 +33,11 @@ func (tc *TelnetConfiguration) setDefaults() {
 		tc.ReconnectionTimeout = time.Second
 	}
 
-	if tc.MaxWriteTimeout == 0 {
+	if tc.MaxWriteTimeout < time.Second {
 		tc.MaxWriteTimeout = time.Second
 	}
 
-	if tc.MaxReadTimeout == 0 {
+	if tc.MaxReadTimeout < time.Second {
 		tc.MaxReadTimeout = time.Second
 	}
 

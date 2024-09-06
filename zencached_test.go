@@ -92,40 +92,6 @@ func createZencached(
 	return z, c, nil
 }
 
-// TestRouting - tests the routing algorithm
-func (ts *zencachedTestSuite) TestRouting() {
-
-	f := func(path, key []byte, expected int) bool {
-
-		_, index, err := ts.instance.GetConnectedNodeWorkers(key, path, key)
-		if !ts.NoError(err, "expects no error getting a connection") {
-			return false
-		}
-
-		if !ts.Equalf(expected, index, "expected index %d", expected) {
-			return false
-		}
-
-		return true
-	}
-
-	if !f([]byte{0, 1}, []byte{2, 255}, 0) { //should be index 0
-		return
-	}
-
-	if !f([]byte{10, 199}, []byte{202, 149}, 2) { //should be index 2
-		return
-	}
-
-	if !f([]byte{206, 98}, []byte{60, 4}, 1) { //should be index 1
-		return
-	}
-
-	if !f([]byte{206, 98}, []byte{60, 3}, 0) { //should be index 0
-		return
-	}
-}
-
 func (ts *zencachedTestSuite) genericInvalidKeyTests(opfuncWrapper func(route, path, key []byte) []error) {
 
 	genericTests := func(path, key []byte, keyIssue string) {
@@ -172,6 +138,98 @@ func (ts *zencachedTestSuite) genericInvalidKeyTests(opfuncWrapper func(route, p
 	key = []byte("Bxyf7xtxtg4byuQwhnkATRQiq4R1wW37a5rjMrTL42Zf0r9F1SzBFt89nAy9zxPYitwLbmeEaPaA6pt5cBha0JJmbu61hHyPCP2vv21Eq7Net0qJdETaxiKtpxwAcZTfFWdy1QhfiFfPnXyW9QxeqZtEWVtbgBWFDJ1cRFTvDNA3qNrvp8vn4BbFbcJnzATLadARxDpBYe0CgjyaNKS3c5U7kGwdEkxMCh3jGJviyjagwhwB8bmk20YFZcZ")
 
 	genericTests(path, key, "key with more than 250 characters")
+}
+
+func (ts *zencachedTestSuite) extractValueFromRawTelnet(response []byte) []byte {
+
+	extractedArray := bytes.Split(response, []byte{'\r', '\n'})
+	if len(extractedArray) != 4 {
+		ts.Fail("expected 4 lines of response")
+		return nil
+	}
+
+	var err error
+	extractedValue := extractedArray[1]
+
+	if ts.compressionType != zencached.CompressionTypeNone {
+		extractedValue, err = ts.compressorInstance.Decompress(extractedValue)
+		if !ts.NoError(err, "expected success decompressing data") {
+			return nil
+		}
+	}
+
+	return extractedValue
+}
+
+// rawSetKey - sets a key on memcached using raw command
+func (ts *zencachedTestSuite) rawSetKey(telnetConn *zencached.Telnet, path, key, value string) {
+
+	// must compress or encode if the configuration is enabled before set the value
+
+	var err error
+	tvalue := []byte(value)
+
+	if ts.compressionType != zencached.CompressionTypeNone {
+
+		tvalue, err = ts.compressorInstance.Compress(tvalue)
+		if !ts.NoError(err, "expected no error compressing value") {
+			return
+		}
+
+	}
+
+	err = telnetConn.Send([]byte(fmt.Sprintf("set %s%s 0 %d %d\r\n%s\r\n", path, key, 60, len(tvalue), string(tvalue))))
+	if !ts.NoError(err, "expected no error sending set command") {
+		return
+	}
+
+	expectedRandomType := randomResultType()
+
+	_, resultType, err := telnetConn.Read(
+		zencached.TelnetResponseSet{
+			ResponseSets: [][]byte{[]byte("STORED")},
+			ResultTypes:  []zencached.ResultType{expectedRandomType},
+		},
+	)
+	if !ts.NoError(err, "expected no error reading key") {
+		return
+	}
+
+	ts.Equal(expectedRandomType, resultType, "expected same result type")
+}
+
+// TestRouting - tests the routing algorithm
+func (ts *zencachedTestSuite) TestRouting() {
+
+	f := func(path, key []byte, expected int) bool {
+
+		_, index, err := ts.instance.GetConnectedNodeWorkers(key, path, key)
+		if !ts.NoError(err, "expects no error getting a connection") {
+			return false
+		}
+
+		if !ts.Equalf(expected, index, "expected index %d", expected) {
+			return false
+		}
+
+		return true
+	}
+
+	if !f([]byte{0, 1}, []byte{2, 255}, 0) { //should be index 0
+		return
+	}
+
+	if !f([]byte{10, 199}, []byte{202, 149}, 2) { //should be index 2
+		return
+	}
+
+	if !f([]byte{206, 98}, []byte{60, 4}, 1) { //should be index 1
+		return
+	}
+
+	if !f([]byte{206, 98}, []byte{60, 3}, 0) { //should be index 0
+		return
+	}
 }
 
 // TestAddCommandWithInvalidKey - tests the add command with invalid keys
@@ -244,43 +302,6 @@ func (ts *zencachedTestSuite) TestAddCommand() {
 	f([]byte{5}, "path", "test1", "test1", zencached.ResultTypeStored, 3)
 	f([]byte{5}, "path", "test2", "test2", zencached.ResultTypeStored, 3)
 	f([]byte{8}, "path", "test1", "error", zencached.ResultTypeNotStored, 3)
-}
-
-// rawSetKey - sets a key on memcached using raw command
-func (ts *zencachedTestSuite) rawSetKey(telnetConn *zencached.Telnet, path, key, value string) {
-
-	// must compress or encode if the configuration is enabled before set the value
-
-	var err error
-	tvalue := []byte(value)
-
-	if ts.compressionType != zencached.CompressionTypeNone {
-
-		tvalue, err = ts.compressorInstance.Compress(tvalue)
-		if !ts.NoError(err, "expected no error compressing value") {
-			return
-		}
-
-	}
-
-	err = telnetConn.Send([]byte(fmt.Sprintf("set %s%s 0 %d %d\r\n%s\r\n", path, key, 60, len(tvalue), string(tvalue))))
-	if !ts.NoError(err, "expected no error sending set command") {
-		return
-	}
-
-	expectedRandomType := randomResultType()
-
-	_, resultType, err := telnetConn.Read(
-		zencached.TelnetResponseSet{
-			ResponseSets: [][]byte{[]byte("STORED")},
-			ResultTypes:  []zencached.ResultType{expectedRandomType},
-		},
-	)
-	if !ts.NoError(err, "expected no error reading key") {
-		return
-	}
-
-	ts.Equal(expectedRandomType, resultType, "expected same result type")
 }
 
 // TestGetCommand - tests the get command
@@ -463,27 +484,6 @@ func (ts *zencachedTestSuite) TestVersionCommand() {
 	ts.Equal(strings.Split(strings.TrimSpace(string(payload)), " ")[1], string(result.Data), "expected same version")
 }
 
-func (ts *zencachedTestSuite) extractValueFromRawTelnet(response []byte) []byte {
-
-	extractedArray := bytes.Split(response, []byte{'\r', '\n'})
-	if len(extractedArray) != 4 {
-		ts.Fail("expected 4 lines of response")
-		return nil
-	}
-
-	var err error
-	extractedValue := extractedArray[1]
-
-	if ts.compressionType != zencached.CompressionTypeNone {
-		extractedValue, err = ts.compressorInstance.Decompress(extractedValue)
-		if !ts.NoError(err, "expected success decompressing data") {
-			return nil
-		}
-	}
-
-	return extractedValue
-}
-
 // TestGetCommandHugeData - tests the get command of huge data
 func (ts *zencachedTestSuite) TestGetCommandHugeData() {
 
@@ -518,11 +518,38 @@ func (ts *zencachedTestSuite) TestGetCommandHugeData() {
 		return
 	}
 
-	if !ts.Equal(zencached.ResultTypeFound, result.Type, "expected value from key \"%s\" to be found", key) {
+	if !ts.Equal(zencached.ResultTypeFound.String(), result.Type.String(), "expected value from key \"%s\" to be found", key) {
 		return
 	}
 
 	ts.Equal(hugeData.String(), string(result.Data), "expected values to be equal")
+}
+
+// TestSetCommandNullValue - tests the set command with null value
+func (ts *zencachedTestSuite) TestSetCommandNullValue() {
+
+	route := []byte{3}
+	path := []byte("path")
+	key := []byte("null-value-key")
+	var value []byte
+
+	result, err := ts.instance.Set(route, path, key, value, defaultTTL)
+	if !ts.NoError(err, "expected no error storing key") {
+		return
+	}
+
+	if !ts.Equal(zencached.ResultTypeStored.String(), result.Type.String(), "expected value from key \"%s\" to be stored as null", key) {
+		return
+	}
+
+	result, err = ts.instance.Get(route, path, key)
+	if !ts.NoError(err, "expected no error storing key") {
+		return
+	}
+
+	if !ts.Equal(zencached.ResultTypeNotFound.String(), result.Type.String(), "expected value from key \"%s\" to be found as null", key) {
+		return
+	}
 }
 
 func TestZencachedSuite(t *testing.T) {

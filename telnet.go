@@ -240,6 +240,7 @@ func (t *Telnet) send(command ...[]byte) error {
 				start := time.Now()
 				wrote = t.writePayload(c)
 				t.configuration.TelnetMetricsCollector.WriteElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+				t.configuration.TelnetMetricsCollector.WriteDataSize(t.node.Host, len(c))
 			}
 
 			if !wrote {
@@ -306,7 +307,7 @@ func (t *Telnet) read(responseSet TelnetResponseSet) ([]byte, ResultType, error)
 mainLoop:
 	for {
 		bytesRead, err = t.connection.Read(buffer)
-		if bytesRead == 0 || err != nil {
+		if err != nil || bytesRead == 0 {
 			break mainLoop
 		}
 
@@ -385,6 +386,7 @@ func (t *Telnet) Read(responseSet TelnetResponseSet) ([]byte, ResultType, error)
 		start := time.Now()
 		data, resultType, err = t.read(responseSet)
 		t.configuration.TelnetMetricsCollector.ReadElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+		t.configuration.TelnetMetricsCollector.ReadDataSize(t.node.Host, len(data))
 	}
 
 	return data, resultType, err
