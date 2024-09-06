@@ -518,7 +518,7 @@ func (ts *zencachedTestSuite) TestGetCommandHugeData() {
 		return
 	}
 
-	if !ts.Equal(zencached.ResultTypeFound, result.Type, "expected value from key \"%s\" to be found", key) {
+	if !ts.Equal(zencached.ResultTypeFound.String(), result.Type.String(), "expected value from key \"%s\" to be found", key) {
 		return
 	}
 

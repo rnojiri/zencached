@@ -19,7 +19,6 @@ type cmdJob struct {
 	cmd                    MemcachedCommand
 	responseSet            TelnetResponseSet
 	renderedCmd, path, key []byte
-	forceCacheMissMetric   bool
 	response               chan cmdResponse
 }
 
@@ -194,14 +193,6 @@ func (nw *nodeWorkers) checkResponse(
 	if len(response) == 0 {
 		return cmdResponse{resultType, nil, ErrMemcachedNoResponse}
 	}
-
-	// if !bytes.HasPrefix(response, checkResponseSet.ResponseSets[0]) {
-	// 	if !bytes.Contains(response, checkResponseSet.ResponseSets[1]) {
-	// 		return cmdResponse{resultType, nil, fmt.Errorf("%w: %s", ErrMemcachedInvalidResponse, string(response))}
-	// 	}
-
-	// 	return cmdResponse{resultType, response, nil}
-	// }
 
 	return cmdResponse{resultType, response, nil}
 }

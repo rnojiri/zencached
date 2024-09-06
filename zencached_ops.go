@@ -47,27 +47,28 @@ type TelnetResponseSet struct {
 var (
 	doubleBreaks []byte = []byte{lineBreaksR, lineBreaksN}
 	// responses
-	mcrVersion   []byte = []byte("VERSION")
-	mcrValue     []byte = []byte("VALUE")
-	mcrStored    []byte = append([]byte("STORED"), doubleBreaks...)
-	mcrNotStored []byte = append([]byte("NOT_STORED"), doubleBreaks...)
-	mcrEnd       []byte = append([]byte("END"), doubleBreaks...)
-	mcrNotFound  []byte = append([]byte("NOT_FOUND"), doubleBreaks...)
-	mcrDeleted   []byte = append([]byte("DELETED"), doubleBreaks...)
+	mcrVersion     []byte = []byte("VERSION")
+	mcrValue       []byte = []byte("VALUE")
+	mcrEnd         []byte = []byte("END")
+	mcrEndDB       []byte = append([]byte("END"), doubleBreaks...)
+	mcrStoredDB    []byte = append([]byte("STORED"), doubleBreaks...)
+	mcrNotStoredDB []byte = append([]byte("NOT_STORED"), doubleBreaks...)
+	mcrNotFoundDB  []byte = append([]byte("NOT_FOUND"), doubleBreaks...)
+	mcrDeletedDB   []byte = append([]byte("DELETED"), doubleBreaks...)
 
 	// response sets
 	mcrStoredResponseSet TelnetResponseSet = TelnetResponseSet{
-		ResponseSets: [][]byte{mcrNotStored, mcrStored},
+		ResponseSets: [][]byte{mcrNotStoredDB, mcrStoredDB},
 		ResultTypes:  []ResultType{ResultTypeNotStored, ResultTypeStored},
 	}
 
 	mcrGetCheckBeginResponseSet TelnetResponseSet = TelnetResponseSet{
-		ResponseSets: [][]byte{mcrEnd},
-		ResultTypes:  []ResultType{ResultTypeFound, ResultTypeNotFound},
+		ResponseSets: [][]byte{mcrEndDB},
+		ResultTypes:  []ResultType{ResultTypeFound},
 	}
 
 	mcrDeletedResponseSet TelnetResponseSet = TelnetResponseSet{
-		ResponseSets: [][]byte{mcrDeleted, mcrNotFound},
+		ResponseSets: [][]byte{mcrDeletedDB, mcrNotFoundDB},
 		ResultTypes:  []ResultType{ResultTypeDeleted, ResultTypeNotFound},
 	}
 
@@ -247,12 +248,6 @@ func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 
 		nw.configuration.ZencachedMetricsCollector.CommandExecution(nw.node.Host, job.cmd, job.path, job.key)
 
-		if result.resultType == ResultTypeFound && !job.forceCacheMissMetric {
-			nw.configuration.ZencachedMetricsCollector.CacheHitEvent(nw.node.Host, job.cmd, job.path, job.key)
-		} else {
-			nw.configuration.ZencachedMetricsCollector.CacheMissEvent(nw.node.Host, job.cmd, job.path, job.key)
-		}
-
 		if result.err != nil {
 
 			nw.configuration.ZencachedMetricsCollector.CommandExecutionError(
@@ -287,13 +282,12 @@ func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, 
 	}
 
 	job := cmdJob{
-		cmd:                  cmd,
-		responseSet:          mcrStoredResponseSet,
-		renderedCmd:          renderedCmd,
-		path:                 path,
-		key:                  key,
-		forceCacheMissMetric: true,
-		response:             make(chan cmdResponse),
+		cmd:         cmd,
+		responseSet: mcrStoredResponseSet,
+		renderedCmd: renderedCmd,
+		path:        path,
+		key:         key,
+		response:    make(chan cmdResponse),
 	}
 
 	result := z.addJobAndWait(nw, job)
@@ -447,13 +441,12 @@ func (z *Zencached) decompressIfConfigured(value []byte) ([]byte, error) {
 func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult, error) {
 
 	job := cmdJob{
-		cmd:                  Get,
-		responseSet:          mcrGetCheckBeginResponseSet,
-		renderedCmd:          z.renderKeyOnlyCmd(Get, path, key),
-		path:                 path,
-		key:                  key,
-		forceCacheMissMetric: false,
-		response:             make(chan cmdResponse),
+		cmd:         Get,
+		responseSet: mcrGetCheckBeginResponseSet,
+		renderedCmd: z.renderKeyOnlyCmd(Get, path, key),
+		path:        path,
+		key:         key,
+		response:    make(chan cmdResponse),
 	}
 
 	result := z.addJobAndWait(nw, job)
@@ -480,11 +473,20 @@ func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult
 	}
 
 	if len(extractedValue) == 0 {
+
+		if z.metricsEnabled {
+			nw.configuration.ZencachedMetricsCollector.CacheMissEvent(nw.node.Host, job.cmd, job.path, job.key)
+		}
+
 		return &OperationResult{
 			Type: ResultTypeNotFound,
 			Data: nil,
 			Node: nw.node,
 		}, nil
+	}
+
+	if z.metricsEnabled {
+		nw.configuration.ZencachedMetricsCollector.CacheHitEvent(nw.node.Host, job.cmd, job.path, job.key)
 	}
 
 	responseData, err := z.decompressIfConfigured(extractedValue)
@@ -522,13 +524,12 @@ func (z *Zencached) Delete(routerHash, path, key []byte) (*OperationResult, erro
 func (z *Zencached) baseDelete(nw *nodeWorkers, path, key []byte) (*OperationResult, error) {
 
 	job := cmdJob{
-		cmd:                  Delete,
-		responseSet:          mcrDeletedResponseSet,
-		renderedCmd:          z.renderKeyOnlyCmd(Delete, path, key),
-		path:                 path,
-		key:                  key,
-		forceCacheMissMetric: false,
-		response:             make(chan cmdResponse),
+		cmd:         Delete,
+		responseSet: mcrDeletedResponseSet,
+		renderedCmd: z.renderKeyOnlyCmd(Delete, path, key),
+		path:        path,
+		key:         key,
+		response:    make(chan cmdResponse),
 	}
 
 	result := z.addJobAndWait(nw, job)
@@ -602,11 +603,10 @@ func (z *Zencached) Version(routerHash []byte) (*OperationResult, error) {
 func (z *Zencached) baseVersion(nw *nodeWorkers) (*OperationResult, error) {
 
 	job := cmdJob{
-		cmd:                  Version,
-		responseSet:          mcrVersionResponseSet,
-		renderedCmd:          z.renderNoParameterCmd(Version),
-		forceCacheMissMetric: true,
-		response:             make(chan cmdResponse),
+		cmd:         Version,
+		responseSet: mcrVersionResponseSet,
+		renderedCmd: z.renderNoParameterCmd(Version),
+		response:    make(chan cmdResponse),
 	}
 
 	result := z.addJobAndWait(nw, job)
