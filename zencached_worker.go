@@ -81,7 +81,7 @@ func (nw *nodeWorkers) terminate() {
 
 func (nw *nodeWorkers) sendNodeTimedMetrics() {
 
-	nw.configuration.ZencachedMetricsCollector.NumResourcesChangeEvent(nw.node.Host, uint32(nw.resources.numAvailableResources()))
+	nw.configuration.ZencachedMetricsCollector.NumResourcesChangeEvent(nw.node.Host, nw.resources.numAvailableResources())
 }
 
 func (nw *nodeWorkers) work(telnetConn *Telnet, workerID int) {

@@ -83,7 +83,7 @@ func (mc *metricsCollector) NodeRebalanceElapsedTime(elapsedTime int64) {
 	mc.numNodeRebalanceElapsedTime++
 }
 
-func (mc *metricsCollector) NumResourcesChangeEvent(node string, numResources uint32) {
+func (mc *metricsCollector) NumResourcesChangeEvent(node string, numResources int) {
 
 	mc.numResourcesChangeEvent++
 }

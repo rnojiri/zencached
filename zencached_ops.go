@@ -47,13 +47,13 @@ type TelnetResponseSet struct {
 var (
 	doubleBreaks []byte = []byte{lineBreaksR, lineBreaksN}
 	// responses
-	mcrValue     []byte = []byte("VALUE") // the only prefix
-	mcrStored    []byte = []byte("STORED")
-	mcrNotStored []byte = []byte("NOT_STORED")
-	mcrEnd       []byte = []byte("END")
-	mcrNotFound  []byte = []byte("NOT_FOUND")
-	mcrDeleted   []byte = []byte("DELETED")
 	mcrVersion   []byte = []byte("VERSION")
+	mcrValue     []byte = []byte("VALUE")
+	mcrStored    []byte = append([]byte("STORED"), doubleBreaks...)
+	mcrNotStored []byte = append([]byte("NOT_STORED"), doubleBreaks...)
+	mcrEnd       []byte = append([]byte("END"), doubleBreaks...)
+	mcrNotFound  []byte = append([]byte("NOT_FOUND"), doubleBreaks...)
+	mcrDeleted   []byte = append([]byte("DELETED"), doubleBreaks...)
 
 	// response sets
 	mcrStoredResponseSet TelnetResponseSet = TelnetResponseSet{
@@ -73,7 +73,7 @@ var (
 
 	mcrVersionResponseSet TelnetResponseSet = TelnetResponseSet{
 		ResponseSets: [][]byte{mcrVersion},
-		ResultTypes:  []ResultType{ResultTypeNone},
+		ResultTypes:  []ResultType{ResultTypeFound},
 	}
 
 	errNoResourceAvailable cmdResponse = cmdResponse{
@@ -554,23 +554,37 @@ func (z *Zencached) renderNoParameterCmd(cmd MemcachedCommand) []byte {
 }
 
 // extractVersionCmdValue - extracts a value from the response
-func (z *Zencached) extractVersionCmdValue(response []byte) (start, end int, err error) {
+func (z *Zencached) extractVersionCmdValue(response []byte) ([]byte, error) {
 
-	start = -1
-	end = len(response) - 2
+	i := 0
 
-	for i := len(response) - 1; i >= 0; i-- {
-		if response[i] == whiteSpace {
-			start = i + 1
+	for ; i < len(mcrVersion); i++ {
+
+		if response[i] != mcrVersion[i] {
+			return nil, fmt.Errorf("no version protocol found")
+		}
+	}
+
+	if response[i] != whiteSpace {
+		return nil, fmt.Errorf("expecting a white space before the version number")
+	}
+
+	i++
+	start := i
+	end := 0
+
+	for ; i < len(response); i++ {
+		if (response[i] == lineBreaksN || response[i] == lineBreaksR) && (response[i+1] == lineBreaksN || response[i+1] == lineBreaksR) {
+			end = i
 			break
 		}
 	}
 
-	if start == -1 {
-		err = fmt.Errorf("no value found")
+	if end == 0 {
+		return nil, fmt.Errorf("no endline found after the version string")
 	}
 
-	return
+	return response[start:end], nil
 }
 
 // Version - performs a version operation
@@ -600,21 +614,24 @@ func (z *Zencached) baseVersion(nw *nodeWorkers) (*OperationResult, error) {
 		return nil, result.err
 	}
 
-	if result.resultType != ResultTypeNone {
+	if result.resultType != ResultTypeFound {
 		return &OperationResult{
 			Type: result.resultType,
 			Node: nw.node,
 		}, nil
 	}
 
-	start, end, err := z.extractVersionCmdValue([]byte(result.response))
+	response, err := z.extractVersionCmdValue(result.response)
 	if err != nil {
-		return nil, err
+		return &OperationResult{
+			Type: ResultTypeError,
+			Node: nw.node,
+		}, err
 	}
 
 	return &OperationResult{
 		Type: result.resultType,
-		Data: result.response[start:end],
+		Data: response,
 		Node: nw.node,
 	}, nil
 }

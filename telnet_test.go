@@ -97,6 +97,8 @@ type telnetMetricsCollector struct {
 	numSendElapsedTime           int
 	numWriteElapsedTime          int
 	numReadElapsedTime           int
+	numReadDataSize              int
+	numWriteDataSize             int
 }
 
 func (tmc *telnetMetricsCollector) ResolveAddressElapsedTime(node string, elapsedTime int64) {
@@ -129,6 +131,16 @@ func (tmc *telnetMetricsCollector) ReadElapsedTime(node string, elapsedTime int6
 	tmc.numReadElapsedTime++
 }
 
+func (tmc *telnetMetricsCollector) WriteDataSize(node string, sizeInBytes int) {
+
+	tmc.numWriteDataSize++
+}
+
+func (tmc *telnetMetricsCollector) ReadDataSize(node string, sizeInBytes int) {
+
+	tmc.numReadDataSize++
+}
+
 func (tmc *telnetMetricsCollector) reset() {
 
 	tmc.numResolveAddressElapsedTime = 0
@@ -137,6 +149,8 @@ func (tmc *telnetMetricsCollector) reset() {
 	tmc.numSendElapsedTime = 0
 	tmc.numWriteElapsedTime = 0
 	tmc.numReadElapsedTime = 0
+	tmc.numWriteDataSize = 0
+	tmc.numReadDataSize = 0
 }
 
 type telnetTestSuite struct {
@@ -151,8 +165,6 @@ func createTelnetConf(metricsCollector zencached.TelnetMetricsCollector) *zencac
 
 	tc := &zencached.TelnetConfiguration{
 		ReconnectionTimeout:    time.Second,
-		MaxWriteTimeout:        time.Second,
-		MaxReadTimeout:         time.Second,
 		HostConnectionTimeout:  time.Second,
 		MaxWriteRetries:        3,
 		ReadBufferSize:         2048,
@@ -249,6 +261,8 @@ func (ts *telnetTestSuite) TestInfoCommand() {
 		ts.Equal(1, ts.metricsCollector.numWriteElapsedTime, "expected a write event")
 		ts.Equal(1, ts.metricsCollector.numReadElapsedTime, "expected a read event")
 		ts.Equal(1, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
+		ts.Equal(1, ts.metricsCollector.numWriteDataSize, "expected a write data size event")
+		ts.Equal(1, ts.metricsCollector.numReadDataSize, "expected a read data size event")
 	}
 }
 
@@ -305,10 +319,12 @@ func (ts *telnetTestSuite) TestInsertCommand() {
 	if ts.enableMetrics {
 		ts.Equal(1, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
 		ts.Equal(1, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
-		ts.Equal(2, ts.metricsCollector.numSendElapsedTime, "expected a send event")
-		ts.Equal(2, ts.metricsCollector.numWriteElapsedTime, "expected a write event")
-		ts.Equal(2, ts.metricsCollector.numReadElapsedTime, "expected a read event")
+		ts.Equal(2, ts.metricsCollector.numSendElapsedTime, "expected 2 send event")
+		ts.Equal(2, ts.metricsCollector.numWriteElapsedTime, "expected 2 write event")
+		ts.Equal(2, ts.metricsCollector.numReadElapsedTime, "expected 2 read event")
 		ts.Equal(1, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
+		ts.Equal(2, ts.metricsCollector.numWriteDataSize, "expected 2 write data size event")
+		ts.Equal(2, ts.metricsCollector.numReadDataSize, "expected 2 read data size event")
 	}
 }
 
