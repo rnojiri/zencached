@@ -73,6 +73,9 @@ type ZencachedMetricsCollector interface {
 
 	// NumResourcesChangeEvent - signalizes a node rebalance event
 	NumResourcesChangeEvent(node string, numResources int)
+
+	// NoAvailableResourcesEvent - signalizes when no resources available detected
+	NoAvailableResourcesEvent(node string)
 }
 
 // TelnetMetricsCollector - the interface to collect metrics from telnet

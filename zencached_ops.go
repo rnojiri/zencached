@@ -219,6 +219,11 @@ func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 	hasResources := nw.resources.take()
 
 	if !hasResources {
+
+		if z.metricsEnabled {
+			nw.configuration.ZencachedMetricsCollector.NoAvailableResourcesEvent(nw.node.Host)
+		}
+
 		return errNoResourceAvailable
 	}
 

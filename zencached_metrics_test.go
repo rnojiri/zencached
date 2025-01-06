@@ -2,6 +2,7 @@ package zencached_test
 
 import (
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/rnojiri/dockerh"
@@ -27,6 +28,7 @@ type metricsCollector struct {
 	numNodeListingElapsedTime      int
 	numNodeRebalanceElapsedTime    int
 	numResourcesChangeEvent        int
+	numNoResourcesAvailableEvents  int
 }
 
 // CommandExecutionElapsedTime - command execution elapsed time
@@ -88,6 +90,11 @@ func (mc *metricsCollector) NumResourcesChangeEvent(node string, numResources in
 	mc.numResourcesChangeEvent++
 }
 
+func (mc *metricsCollector) NoAvailableResourcesEvent(node string) {
+
+	mc.numNoResourcesAvailableEvents++
+}
+
 func (mc *metricsCollector) reset() {
 
 	mc.numCommandExecutionElapsedTime = 0
@@ -101,15 +108,17 @@ func (mc *metricsCollector) reset() {
 	mc.numNodeListingElapsedTime = 0
 	mc.numNodeRebalanceElapsedTime = 0
 	mc.numResourcesChangeEvent = 0
+	mc.numNoResourcesAvailableEvents = 0
 }
 
 type zencachedMetricsTestSuite struct {
 	suite.Suite
-	instance      *zencached.Zencached
-	config        *zencached.Configuration
-	metrics       *metricsCollector
-	telnetMetrics *telnetMetricsCollector
-	memcachedHost string
+	instance                   *zencached.Zencached
+	config                     *zencached.Configuration
+	metrics                    *metricsCollector
+	telnetMetrics              *telnetMetricsCollector
+	commandExecutionBufferSize uint32
+	memcachedHost              string
 }
 
 func (ts *zencachedMetricsTestSuite) SetupSuite() {
@@ -127,9 +136,13 @@ func (ts *zencachedMetricsTestSuite) SetupSuite() {
 	ts.metrics = &metricsCollector{}
 	ts.telnetMetrics = &telnetMetricsCollector{}
 
+	if ts.commandExecutionBufferSize == 0 {
+		ts.commandExecutionBufferSize = 10
+	}
+
 	ts.instance, ts.config, err = createZencached(
 		[]zencached.Node{{Host: ts.memcachedHost, Port: memcachedMetricsPodPort}},
-		10, false,
+		ts.commandExecutionBufferSize, false,
 		ts.metrics, ts.telnetMetrics,
 		zencached.CompressionTypeNone,
 	)
@@ -151,7 +164,11 @@ func (ts *zencachedMetricsTestSuite) TearDownSuite() {
 	terminatePods()
 }
 
-func (ts *zencachedMetricsTestSuite) TestCommandExecutionEvents() {
+type zencachedCommonMetricsTestSuite struct {
+	zencachedMetricsTestSuite
+}
+
+func (ts *zencachedCommonMetricsTestSuite) TestCommandExecutionEvents() {
 
 	ts.instance.Add(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
 	ts.instance.SendTimedMetrics()
@@ -173,7 +190,7 @@ func (ts *zencachedMetricsTestSuite) TestCommandExecutionEvents() {
 	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
 }
 
-func (ts *zencachedMetricsTestSuite) TestCacheMissEvents() {
+func (ts *zencachedCommonMetricsTestSuite) TestCacheMissEvents() {
 
 	ts.instance.Get(nil, []byte("path1"), []byte("key1"))
 	ts.instance.SendTimedMetrics()
@@ -190,7 +207,7 @@ func (ts *zencachedMetricsTestSuite) TestCacheMissEvents() {
 	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
 }
 
-func (ts *zencachedMetricsTestSuite) TestCacheHitEvents() {
+func (ts *zencachedCommonMetricsTestSuite) TestCacheHitEvents() {
 
 	ts.instance.Set(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
 	ts.instance.SendTimedMetrics()
@@ -210,7 +227,7 @@ func (ts *zencachedMetricsTestSuite) TestCacheHitEvents() {
 }
 
 // TestZCacheHitEvents - executes last because of the 'Z'
-func (ts *zencachedMetricsTestSuite) TestZ1CommandExecutionError() {
+func (ts *zencachedCommonMetricsTestSuite) TestZ1CommandExecutionError() {
 
 	err := dockerh.Remove(memcachedMetricsPodName)
 	if !ts.NoError(err, "expected no errors removing memcached metrics pod: %v", err) {
@@ -234,7 +251,7 @@ func (ts *zencachedMetricsTestSuite) TestZ1CommandExecutionError() {
 	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
 }
 
-func (ts *zencachedMetricsTestSuite) TestZ2RebalanceMetrics() {
+func (ts *zencachedCommonMetricsTestSuite) TestZ2RebalanceMetrics() {
 
 	ts.instance.Rebalance()
 	ts.instance.SendTimedMetrics()
@@ -250,7 +267,7 @@ func (ts *zencachedMetricsTestSuite) TestZ2RebalanceMetrics() {
 	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
 }
 
-func (ts *zencachedMetricsTestSuite) TestZ3RebalanceMetricsError() {
+func (ts *zencachedCommonMetricsTestSuite) TestZ3RebalanceMetricsError() {
 
 	ts.config.NodeListFunction = func() ([]zencached.Node, error) {
 		return []zencached.Node{
@@ -278,7 +295,7 @@ func (ts *zencachedMetricsTestSuite) TestZ3RebalanceMetricsError() {
 	ts.Equal(0, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
 }
 
-func (ts *zencachedMetricsTestSuite) TestZ4NodeListingErrorMetricsError() {
+func (ts *zencachedCommonMetricsTestSuite) TestZ4NodeListingErrorMetricsError() {
 
 	ts.config.NodeListFunction = func() ([]zencached.Node, error) {
 		return nil, errors.New("some error")
@@ -298,7 +315,74 @@ func (ts *zencachedMetricsTestSuite) TestZ4NodeListingErrorMetricsError() {
 	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
 }
 
-func TestZencachedMetricsSuite(t *testing.T) {
+func TestZencachedCommonMetricsSuite(t *testing.T) {
 
-	suite.Run(t, new(zencachedMetricsTestSuite))
+	suite.Run(t, new(zencachedCommonMetricsTestSuite))
+}
+
+type zencachedNoResourceMetricsTestSuite struct {
+	zencachedMetricsTestSuite
+}
+
+func (ts *zencachedNoResourceMetricsTestSuite) TestNoResoucesAvailableEvents() {
+
+	wc := sync.WaitGroup{}
+
+	for i := 0; i < 3; i++ {
+		wc.Add(1)
+		go func() {
+			ts.instance.Add(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
+			ts.instance.SendTimedMetrics()
+			wc.Done()
+		}()
+	}
+
+	wc.Wait()
+
+	ts.Equal(1, ts.metrics.numCommandExecution, "expects one command execution event")
+	ts.Equal(1, ts.metrics.numCommandExecutionElapsedTime, "expects one command execution time measurement")
+	ts.Equal(3, ts.metrics.numResourcesChangeEvent, "expected one event changing the number of resources")
+	ts.Equal(2, ts.metrics.numNoResourcesAvailableEvents, "expected three no resource available events")
+	ts.Equal(0, ts.telnetMetrics.numResolveAddressElapsedTime, "expected a resolve address event")
+	ts.Equal(0, ts.telnetMetrics.numDialElapsedTime, "expected a dial event")
+	ts.Equal(1, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
+	ts.Equal(1, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
+	ts.Equal(1, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
+	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
+}
+
+func (ts *zencachedNoResourceMetricsTestSuite) TestSequentialCallsShouldNeverExhaustResources() {
+
+	for i := 0; i < 10; i++ {
+		ts.instance.Add(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
+		ts.instance.SendTimedMetrics()
+		ts.instance.Get(nil, []byte("path1"), []byte("key1"))
+		ts.instance.SendTimedMetrics()
+		ts.instance.ClusterGet([]byte("path1"), []byte("key1"))
+		ts.instance.SendTimedMetrics()
+		ts.instance.Delete(nil, []byte("path1"), []byte("key1"))
+		ts.instance.SendTimedMetrics()
+	}
+
+	ts.Equal(40, ts.metrics.numCommandExecution, "expects fourty command execution events")
+	ts.Equal(40, ts.metrics.numCommandExecutionElapsedTime, "expects fourty command execution time measurements")
+	ts.Equal(40, ts.metrics.numResourcesChangeEvent, "expected fourty event changing the number of resources")
+	ts.Equal(0, ts.metrics.numNoResourcesAvailableEvents, "expected three no resource available events")
+	ts.Equal(0, ts.telnetMetrics.numResolveAddressElapsedTime, "expected a resolve address event")
+	ts.Equal(0, ts.telnetMetrics.numDialElapsedTime, "expected a dial event")
+	ts.Equal(40, ts.telnetMetrics.numSendElapsedTime, "expected fourty send events")
+	ts.Equal(40, ts.telnetMetrics.numWriteElapsedTime, "expected fourty write events")
+	ts.Equal(40, ts.telnetMetrics.numReadElapsedTime, "expected fourty read events")
+	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
+}
+
+func TestZencachedNoResourceMetricsSuite(t *testing.T) {
+
+	suite.Run(t,
+		&zencachedNoResourceMetricsTestSuite{
+			zencachedMetricsTestSuite: zencachedMetricsTestSuite{
+				commandExecutionBufferSize: 1,
+			},
+		},
+	)
 }
