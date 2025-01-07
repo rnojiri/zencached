@@ -334,3 +334,9 @@ func (z *Zencached) SendTimedMetrics() {
 		}
 	}
 }
+
+// HasResourcesAvailable - returns the status to check if there are resources available
+func (z *Zencached) HasResourcesAvailable() bool {
+
+	return !z.noResourcesAvailable.Load()
+}

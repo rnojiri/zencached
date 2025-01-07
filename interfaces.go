@@ -34,6 +34,9 @@ type IZencached interface {
 
 	// GetConnectedNodes - returns the currently connected nodes
 	GetConnectedNodes() []Node
+
+	// HasResourcesAvailable - returns the status to check if there are resources available
+	HasResourcesAvailable() bool
 }
 
 var _ IZencached = (*Zencached)(nil)
