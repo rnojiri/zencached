@@ -76,6 +76,9 @@ type ZencachedMetricsCollector interface {
 
 	// NoAvailableResourcesEvent - signalizes when no resources available detected
 	NoAvailableResourcesEvent(node string)
+
+	// AvailableResourcesRestoredEvent - signalizes when resources are available again
+	AvailableResourcesRestoredEvent(node string)
 }
 
 // TelnetMetricsCollector - the interface to collect metrics from telnet

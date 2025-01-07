@@ -20,6 +20,7 @@ type Zencached struct {
 	shuttingDown             atomic.Bool
 	rebalanceLock            atomic.Bool
 	notAvailable             atomic.Bool
+	noResourcesAvailable     atomic.Bool
 	nodeWorkerArray          []*nodeWorkers
 	connectedNodes           []Node
 	rebalanceChannel         chan struct{}

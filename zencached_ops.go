@@ -220,7 +220,7 @@ func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 
 	if !hasResources {
 
-		if z.metricsEnabled {
+		if z.noResourcesAvailable.CompareAndSwap(false, true) && z.metricsEnabled {
 			nw.configuration.ZencachedMetricsCollector.NoAvailableResourcesEvent(nw.node.Host)
 		}
 
@@ -229,6 +229,10 @@ func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 
 	defer func() {
 		nw.resources.put()
+
+		if z.noResourcesAvailable.CompareAndSwap(true, false) && z.metricsEnabled {
+			nw.configuration.ZencachedMetricsCollector.AvailableResourcesRestoredEvent(nw.node.Host)
+		}
 	}()
 
 	var result cmdResponse

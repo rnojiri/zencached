@@ -17,18 +17,19 @@ const (
 )
 
 type metricsCollector struct {
-	numCommandExecutionElapsedTime int
-	numCommandExecution            int
-	numCommandExecutionError       int
-	numCacheMissEvent              int
-	numCacheHitEvent               int
-	numNodeRebalanceEvent          int
-	numNodeListingEvent            int
-	numNodeListingError            int
-	numNodeListingElapsedTime      int
-	numNodeRebalanceElapsedTime    int
-	numResourcesChangeEvent        int
-	numNoResourcesAvailableEvents  int
+	numCommandExecutionElapsedTime     int
+	numCommandExecution                int
+	numCommandExecutionError           int
+	numCacheMissEvent                  int
+	numCacheHitEvent                   int
+	numNodeRebalanceEvent              int
+	numNodeListingEvent                int
+	numNodeListingError                int
+	numNodeListingElapsedTime          int
+	numNodeRebalanceElapsedTime        int
+	numResourcesChangeEvent            int
+	numNoResourcesAvailableEvents      int
+	numAvailableResourcesRestoredEvent int
 }
 
 // CommandExecutionElapsedTime - command execution elapsed time
@@ -95,6 +96,11 @@ func (mc *metricsCollector) NoAvailableResourcesEvent(node string) {
 	mc.numNoResourcesAvailableEvents++
 }
 
+func (mc *metricsCollector) AvailableResourcesRestoredEvent(node string) {
+
+	mc.numAvailableResourcesRestoredEvent++
+}
+
 func (mc *metricsCollector) reset() {
 
 	mc.numCommandExecutionElapsedTime = 0
@@ -109,6 +115,7 @@ func (mc *metricsCollector) reset() {
 	mc.numNodeRebalanceElapsedTime = 0
 	mc.numResourcesChangeEvent = 0
 	mc.numNoResourcesAvailableEvents = 0
+	mc.numAvailableResourcesRestoredEvent = 0
 }
 
 type zencachedMetricsTestSuite struct {
@@ -341,8 +348,9 @@ func (ts *zencachedNoResourceMetricsTestSuite) TestNoResoucesAvailableEvents() {
 
 	ts.Equal(1, ts.metrics.numCommandExecution, "expects one command execution event")
 	ts.Equal(1, ts.metrics.numCommandExecutionElapsedTime, "expects one command execution time measurement")
-	ts.Equal(3, ts.metrics.numResourcesChangeEvent, "expected one event changing the number of resources")
-	ts.Equal(2, ts.metrics.numNoResourcesAvailableEvents, "expected three no resource available events")
+	ts.Equal(3, ts.metrics.numResourcesChangeEvent, "expected three event changing the number of resources")
+	ts.Equal(1, ts.metrics.numNoResourcesAvailableEvents, "expected one no resource available events")
+	ts.Equal(1, ts.metrics.numAvailableResourcesRestoredEvent, "expected one resource available events")
 	ts.Equal(0, ts.telnetMetrics.numResolveAddressElapsedTime, "expected a resolve address event")
 	ts.Equal(0, ts.telnetMetrics.numDialElapsedTime, "expected a dial event")
 	ts.Equal(1, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
@@ -367,12 +375,44 @@ func (ts *zencachedNoResourceMetricsTestSuite) TestSequentialCallsShouldNeverExh
 	ts.Equal(40, ts.metrics.numCommandExecution, "expects fourty command execution events")
 	ts.Equal(40, ts.metrics.numCommandExecutionElapsedTime, "expects fourty command execution time measurements")
 	ts.Equal(40, ts.metrics.numResourcesChangeEvent, "expected fourty event changing the number of resources")
-	ts.Equal(0, ts.metrics.numNoResourcesAvailableEvents, "expected three no resource available events")
+	ts.Equal(0, ts.metrics.numNoResourcesAvailableEvents, "expected zero no resource available events")
+	ts.Equal(0, ts.metrics.numAvailableResourcesRestoredEvent, "expected zero resource available events")
 	ts.Equal(0, ts.telnetMetrics.numResolveAddressElapsedTime, "expected a resolve address event")
 	ts.Equal(0, ts.telnetMetrics.numDialElapsedTime, "expected a dial event")
 	ts.Equal(40, ts.telnetMetrics.numSendElapsedTime, "expected fourty send events")
 	ts.Equal(40, ts.telnetMetrics.numWriteElapsedTime, "expected fourty write events")
 	ts.Equal(40, ts.telnetMetrics.numReadElapsedTime, "expected fourty read events")
+	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
+}
+
+func (ts *zencachedNoResourceMetricsTestSuite) TestResoucesAvailableEvents() {
+
+	wc := sync.WaitGroup{}
+
+	for i := 0; i < 2; i++ {
+		wc.Add(1)
+		go func() {
+			ts.instance.Add(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
+			ts.instance.SendTimedMetrics()
+			wc.Done()
+		}()
+	}
+
+	wc.Wait()
+
+	ts.instance.Add(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
+	ts.instance.SendTimedMetrics()
+
+	ts.Equal(2, ts.metrics.numCommandExecution, "expects two command execution events")
+	ts.Equal(2, ts.metrics.numCommandExecutionElapsedTime, "expects tow command execution time measurements")
+	ts.Equal(3, ts.metrics.numResourcesChangeEvent, "expected three event changing the number of resources")
+	ts.Equal(1, ts.metrics.numNoResourcesAvailableEvents, "expected one no resource available events")
+	ts.Equal(1, ts.metrics.numAvailableResourcesRestoredEvent, "expected one resource available events")
+	ts.Equal(0, ts.telnetMetrics.numResolveAddressElapsedTime, "expected a resolve address event")
+	ts.Equal(0, ts.telnetMetrics.numDialElapsedTime, "expected a dial event")
+	ts.Equal(2, ts.telnetMetrics.numSendElapsedTime, "expected two send event")
+	ts.Equal(2, ts.telnetMetrics.numWriteElapsedTime, "expected two write event")
+	ts.Equal(2, ts.telnetMetrics.numReadElapsedTime, "expected two read event")
 	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
 }
 

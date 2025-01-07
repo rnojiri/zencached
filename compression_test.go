@@ -47,7 +47,7 @@ func TestZstandardCompression(t *testing.T) {
 	assert.NoError(t, err, "expects no error compressing in zstandard")
 
 	assert.LessOrEqual(t, len(compressedData), len(notCompressed), "expected the compressed data to be less than the original data")
-	assert.LessOrEqual(t, float64(70), (1-float64(len(compressedData))/float64(len(notCompressed)))*100, "expected the compressed data to be less than the original data")
+	assert.LessOrEqual(t, (1-float64(len(compressedData))/float64(len(notCompressed)))*100, float64(70), "expected the compressed data to be less than the original data")
 
 	decompressedData, err := dcs.Decompress(compressedData)
 	assert.NoError(t, err, "expects no error decompressing from zstandard")
