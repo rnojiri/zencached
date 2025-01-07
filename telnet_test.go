@@ -42,12 +42,17 @@ func randomResultType() zencached.ResultType {
 func createExtraMemcachedPod(t *testing.T) (newPodName string, newNode zencached.Node) {
 
 	var err error
-	newPodName = "extra-memcached-pod"
+	newPodName = "memcached-pod-extra"
 	newNode.Port = memcachedPodPort[len(memcachedPodPort)-1] + 1
 	newNode.Host, err = dockerh.CreateMemcached(newPodName, newNode.Port, 64)
 	assert.NoError(t, err, "expected no error creating a new pod")
 
 	return
+}
+
+func removeExtraMemcachedPod() {
+
+	dockerh.Remove("memcached-pod-extra")
 }
 
 //
@@ -88,6 +93,8 @@ func terminatePods() {
 	for i := 0; i < numNodes; i++ {
 		dockerh.Remove(memcachedPodNames[i])
 	}
+
+	removeExtraMemcachedPod()
 }
 
 type telnetMetricsCollector struct {
