@@ -14,9 +14,6 @@ type TelnetConfiguration struct {
 	// HostConnectionTimeout - the max time duration to wait to connect to a host
 	HostConnectionTimeout time.Duration
 
-	// MaxWriteRetries - the maximum number of write retries
-	MaxWriteRetries int
-
 	// ReadBufferSize - the size of the read buffer in bytes
 	ReadBufferSize int
 

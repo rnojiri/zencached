@@ -173,7 +173,6 @@ func createTelnetConf(metricsCollector zencached.TelnetMetricsCollector) *zencac
 	tc := &zencached.TelnetConfiguration{
 		ReconnectionTimeout:    time.Second,
 		HostConnectionTimeout:  time.Second,
-		MaxWriteRetries:        3,
 		ReadBufferSize:         2048,
 		TelnetMetricsCollector: metricsCollector,
 	}

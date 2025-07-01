@@ -34,9 +34,6 @@ type IZencached interface {
 
 	// GetConnectedNodes - returns the currently connected nodes
 	GetConnectedNodes() []Node
-
-	// HasResourcesAvailable - returns the status to check if there are resources available
-	HasResourcesAvailable() bool
 }
 
 var _ IZencached = (*Zencached)(nil)
@@ -73,15 +70,6 @@ type ZencachedMetricsCollector interface {
 
 	// NodeRebalanceElapsedTime - signalizes a node rebalance event (nanoseconds)
 	NodeRebalanceElapsedTime(elapsedTime int64)
-
-	// NumResourcesChangeEvent - signalizes a node rebalance event
-	NumResourcesChangeEvent(node string, numResources int)
-
-	// NoAvailableResourcesEvent - signalizes when no resources available detected
-	NoAvailableResourcesEvent(node string)
-
-	// AvailableResourcesRestoredEvent - signalizes when resources are available again
-	AvailableResourcesRestoredEvent(node string)
 }
 
 // TelnetMetricsCollector - the interface to collect metrics from telnet

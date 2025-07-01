@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -53,10 +51,10 @@ func isDisconnectionError(t *testing.T, err error) bool {
 
 	return assert.True(
 		t,
-		errors.Is(err, zencached.ErrMaxReconnectionsReached) ||
-			errors.Is(err, zencached.ErrMemcachedNoResponse) ||
-			errors.Is(err, zencached.ErrNoAvailableConnections) ||
+		errors.Is(err, zencached.ErrMemcachedNoResponse) ||
 			errors.Is(err, zencached.ErrNoAvailableNodes) ||
+			errors.Is(err, zencached.ErrConnectionWrite) ||
+			errors.Is(err, zencached.ErrConnectionRead) ||
 			errors.Is(err, zencached.ErrTelnetConnectionIsClosed),
 		fmt.Sprintf("expected a disconnection error, instead: %v", err),
 	)
@@ -272,87 +270,4 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 func TestZencachedRecoveryTestSuite(t *testing.T) {
 
 	suite.Run(t, new(zencachedRecoveryTestSuite))
-}
-
-// TestMaxConnectionRetryError - tests when the maximum number of connections is reached
-func TestMaxConnectionRetryError(t *testing.T) {
-
-	terminatePods()
-	newPodName, newNode := createExtraMemcachedPod(t)
-
-	instance, _, err := createZencached([]zencached.Node{newNode}, 10, false, nil, nil, zencached.CompressionTypeNone)
-	if err != nil {
-		t.Fatalf("expected no errors creating zencached: %v", err)
-	}
-
-	_, err = instance.Get(nil, []byte("p"), []byte("k"))
-	if !assert.NoError(t, err, "expected no error connecting") {
-		return
-	}
-
-	dockerh.Remove(newPodName)
-
-	_, err = instance.Get(nil, []byte("p"), []byte("k"))
-	if !isDisconnectionError(t, err) {
-		return
-	}
-
-	createExtraMemcachedPod(t)
-	defer dockerh.Remove(newPodName)
-
-	_, err = instance.Get(nil, []byte("p"), []byte("k"))
-	if err != nil && !isDisconnectionError(t, err) {
-		return
-	}
-
-	_, err = instance.Get(nil, []byte("p"), []byte("k"))
-	if !assert.NoError(t, err, "expected no error reconnecting") {
-		return
-	}
-
-	instance.Shutdown()
-}
-
-// TestNoAvailableResourcesError - tests when the maximum number of goroutines is reached
-func TestNoAvailableResourcesError(t *testing.T) {
-
-	terminatePods()
-	_, newNode := createExtraMemcachedPod(t)
-	defer terminatePods()
-
-	instance, _, err := createZencached([]zencached.Node{newNode}, 1, false, nil, nil, zencached.CompressionTypeNone)
-	if err != nil {
-		t.Fatalf("expected no errors creating zencached: %v", err)
-	}
-
-	var successCount, expectedErrorCount, otherErrors uint32
-	wc := sync.WaitGroup{}
-	wc.Add(10)
-
-	for i := 0; i < 10; i++ {
-
-		go func() {
-			_, err = instance.Get(nil, []byte("p"), []byte("k"))
-			if err == nil {
-				atomic.AddUint32(&successCount, 1)
-			} else {
-
-				if errors.Is(err, zencached.ErrNoAvailableResources) {
-					atomic.AddUint32(&expectedErrorCount, 1)
-				} else {
-					atomic.AddUint32(&otherErrors, 1)
-				}
-			}
-
-			wc.Done()
-		}()
-	}
-
-	wc.Wait()
-
-	assert.Equal(t, uint32(1), successCount, "expected only one success")
-	assert.Equal(t, uint32(9), expectedErrorCount, "expected nine no resources available errors")
-	assert.Equal(t, uint32(0), otherErrors, "expected no other error types")
-
-	instance.Shutdown()
 }

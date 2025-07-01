@@ -15,19 +15,17 @@ import (
 
 // Zencached - declares the main structure
 type Zencached struct {
-	configuration            *Configuration
-	logger                   *logh.ContextualLogger
-	shuttingDown             atomic.Bool
-	rebalanceLock            atomic.Bool
-	notAvailable             atomic.Bool
-	noResourcesAvailable     atomic.Bool
-	nodeWorkerArray          []*nodeWorkers
-	connectedNodes           []Node
-	rebalanceChannel         chan struct{}
-	closeTimedMetricsChannel chan struct{}
-	metricsEnabled           bool
-	compressionEnabled       bool
-	dataCompressor           DataCompressor
+	configuration      *Configuration
+	logger             *logh.ContextualLogger
+	shuttingDown       atomic.Bool
+	rebalanceLock      atomic.Bool
+	notAvailable       atomic.Bool
+	nodeWorkerArray    []*nodeWorkers
+	connectedNodes     []Node
+	rebalanceChannel   chan struct{}
+	metricsEnabled     bool
+	compressionEnabled bool
+	dataCompressor     DataCompressor
 }
 
 // New - creates a new instance
@@ -36,13 +34,12 @@ func New(configuration *Configuration) (*Zencached, error) {
 	configuration.setDefaults()
 
 	z := &Zencached{
-		nodeWorkerArray:          nil,
-		configuration:            configuration,
-		logger:                   logh.CreateContextualLogger("pkg", "zencached"),
-		rebalanceChannel:         make(chan struct{}, 1),
-		closeTimedMetricsChannel: make(chan struct{}, 1),
-		metricsEnabled:           !interfaceIsNil(configuration.ZencachedMetricsCollector),
-		dataCompressor:           nil,
+		nodeWorkerArray:  nil,
+		configuration:    configuration,
+		logger:           logh.CreateContextualLogger("pkg", "zencached"),
+		rebalanceChannel: make(chan struct{}, 1),
+		metricsEnabled:   !interfaceIsNil(configuration.ZencachedMetricsCollector),
+		dataCompressor:   nil,
 	}
 
 	if configuration.CompressionConfiguration.CompressionType != CompressionTypeNone {
@@ -59,10 +56,6 @@ func New(configuration *Configuration) (*Zencached, error) {
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	if z.metricsEnabled && !z.configuration.DisableTimedMetrics {
-		go z.sendTimedMetrics()
 	}
 
 	z.Rebalance()
@@ -219,8 +212,9 @@ func (z *Zencached) rebalance() {
 
 		z.notAvailable.Store(true)
 
+		<-time.After(z.configuration.NodeListRetryTimeout)
+
 		go func() {
-			<-time.After(z.configuration.NodeListRetryTimeout)
 			z.Rebalance()
 		}()
 	} else {
@@ -272,8 +266,6 @@ func (z *Zencached) Shutdown() {
 		z.logger.Info().Msg("shutting down...")
 	}
 
-	z.closeTimedMetricsChannel <- struct{}{}
-
 	z.shuttingDown.Store(true)
 
 	for ni, nw := range z.nodeWorkerArray {
@@ -295,48 +287,4 @@ func (z *Zencached) GetConnectedNodes() []Node {
 	copy(c, z.connectedNodes)
 
 	return c
-}
-
-func (z *Zencached) sendTimedMetrics() {
-
-	ticker := time.NewTicker(z.configuration.TimedMetricsPeriod)
-
-	for {
-
-		select {
-
-		case <-ticker.C:
-			z.SendTimedMetrics()
-
-		case <-z.closeTimedMetricsChannel:
-			if logh.InfoEnabled {
-				z.logger.Info().Msg("terminating timed metrics loop...")
-			}
-			ticker.Stop()
-			return
-
-		default:
-			<-time.After(z.configuration.TimedMetricsPeriod / 2)
-		}
-	}
-}
-
-func (z *Zencached) SendTimedMetrics() {
-
-	if len(z.nodeWorkerArray) > 0 {
-
-		if logh.DebugEnabled {
-			z.logger.Debug().Msg("sending timed metrics")
-		}
-
-		for _, nw := range z.nodeWorkerArray {
-			nw.sendNodeTimedMetrics()
-		}
-	}
-}
-
-// HasResourcesAvailable - returns the status to check if there are resources available
-func (z *Zencached) HasResourcesAvailable() bool {
-
-	return !z.noResourcesAvailable.Load()
 }

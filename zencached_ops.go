@@ -77,12 +77,6 @@ var (
 		ResultTypes:  []ResultType{ResultTypeFound},
 	}
 
-	errNoResourceAvailable cmdResponse = cmdResponse{
-		resultType: ResultTypeError,
-		response:   nil,
-		err:        ErrNoAvailableResources,
-	}
-
 	// ErrInvalidKeyFormat - raised when a key has a invlid format
 	ErrInvalidKeyFormat error = errors.New("key format is invalid, it should have more than 0 or maximum of 250 bytes without new lines and spaces")
 )
@@ -215,25 +209,6 @@ func (z *Zencached) store(cmd MemcachedCommand, routerHash, path, key, value []b
 }
 
 func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
-
-	hasResources := nw.resources.take()
-
-	if !hasResources {
-
-		if z.noResourcesAvailable.CompareAndSwap(false, true) && z.metricsEnabled {
-			nw.configuration.ZencachedMetricsCollector.NoAvailableResourcesEvent(nw.node.Host)
-		}
-
-		return errNoResourceAvailable
-	}
-
-	defer func() {
-		nw.resources.put()
-
-		if z.noResourcesAvailable.CompareAndSwap(true, false) && z.metricsEnabled {
-			nw.configuration.ZencachedMetricsCollector.AvailableResourcesRestoredEvent(nw.node.Host)
-		}
-	}()
 
 	var result cmdResponse
 
