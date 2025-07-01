@@ -7,6 +7,7 @@ import (
 	"net"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/rnojiri/logh"
@@ -65,6 +66,7 @@ type Telnet struct {
 	configuration  TelnetConfiguration
 	node           Node
 	metricsEnabled bool
+	onFailure      atomic.Bool
 }
 
 func interfaceIsNil(subject interface{}) bool {
@@ -92,6 +94,7 @@ func NewTelnet(node Node, configuration TelnetConfiguration) (*Telnet, error) {
 		configuration:  configuration,
 		node:           node,
 		metricsEnabled: !interfaceIsNil(configuration.TelnetMetricsCollector),
+		onFailure:      atomic.Bool{},
 	}
 
 	return t, nil
@@ -216,45 +219,30 @@ func (t *Telnet) Close() {
 // send - send some command to the server
 func (t *Telnet) send(command ...[]byte) error {
 
+	if t.onFailure.Load() {
+		return ErrConnectionWrite
+	}
+
 	var err error
 	var wrote bool
 
 	for _, c := range command {
-	innerLoop:
-		for i := 0; i < t.configuration.MaxWriteRetries; i++ {
 
-			if !t.metricsEnabled {
+		if !t.metricsEnabled {
 
-				wrote = t.writePayload(c)
+			wrote = t.writePayload(c)
 
-			} else {
+		} else {
 
-				start := time.Now()
-				wrote = t.writePayload(c)
-				t.configuration.TelnetMetricsCollector.WriteElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
-				t.configuration.TelnetMetricsCollector.WriteDataSize(t.node.Host, len(c))
-			}
+			start := time.Now()
+			wrote = t.writePayload(c)
+			t.configuration.TelnetMetricsCollector.WriteElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
+			t.configuration.TelnetMetricsCollector.WriteDataSize(t.node.Host, len(c))
+		}
 
-			if !wrote {
-
-				t.Close()
-
-				err = t.Connect()
-				if err != nil {
-					if i+1 == t.configuration.MaxWriteRetries {
-						if logh.DebugEnabled {
-							t.logger.Debug().Err(err).Msg("maximum number of connections retries reached")
-						}
-
-						return fmt.Errorf("%w: %s", ErrMaxReconnectionsReached, err)
-					}
-
-					<-time.After(t.configuration.ReconnectionTimeout)
-					continue
-				}
-			} else {
-				break innerLoop
-			}
+		if !wrote {
+			t.onFailure.CompareAndSwap(false, true)
+			return ErrConnectionWrite
 		}
 	}
 
@@ -282,6 +270,10 @@ func (t *Telnet) Send(command ...[]byte) error {
 
 // read - reads the payload from the active connection
 func (t *Telnet) read(responseSet TelnetResponseSet) ([]byte, ResultType, error) {
+
+	if t.onFailure.Load() {
+		return nil, ResultTypeNone, ErrConnectionRead
+	}
 
 	var err error
 	fullBuffer := bytes.Buffer{}
@@ -315,6 +307,7 @@ mainLoop:
 
 	if err != nil && err != io.EOF {
 		t.logConnectionError(err, read)
+		t.onFailure.CompareAndSwap(false, true)
 		return nil, ResultTypeError, err
 	}
 

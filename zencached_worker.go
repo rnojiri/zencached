@@ -25,7 +25,6 @@ type cmdJob struct {
 type nodeWorkers struct {
 	logger           *logh.ContextualLogger
 	connected        atomic.Bool
-	resources        *resourceChannel
 	node             Node
 	jobs             chan cmdJob
 	rebalanceChannel chan<- struct{}
@@ -75,12 +74,6 @@ func (nw *nodeWorkers) NewTelnetFromNode() (*Telnet, error) {
 func (nw *nodeWorkers) terminate() {
 
 	close(nw.jobs)
-	nw.resources.terminate()
-}
-
-func (nw *nodeWorkers) sendNodeTimedMetrics() {
-
-	nw.configuration.ZencachedMetricsCollector.NumResourcesChangeEvent(nw.node.Host, nw.resources.numAvailableResources())
 }
 
 func (nw *nodeWorkers) work(telnetConn *Telnet, workerID int) {
@@ -91,9 +84,9 @@ func (nw *nodeWorkers) work(telnetConn *Telnet, workerID int) {
 
 		job.response <- response
 
-		if errors.Is(response.err, ErrNoAvailableConnections) ||
-			errors.Is(response.err, ErrMaxReconnectionsReached) ||
-			errors.Is(response.err, ErrMemcachedNoResponse) {
+		if errors.Is(response.err, ErrMemcachedNoResponse) ||
+			errors.Is(response.err, ErrConnectionWrite) ||
+			errors.Is(response.err, ErrConnectionRead) {
 
 			if nw.configuration.RebalanceOnDisconnection {
 				nw.rebalanceChannel <- struct{}{}
@@ -117,7 +110,6 @@ func (z *Zencached) createNodeWorker(node Node, rebalanceChannel chan<- struct{}
 		logger:           logh.CreateContextualLogger("pkg", "zencached", "node", node.String()),
 		node:             node,
 		connected:        atomic.Bool{},
-		resources:        newResource(z.configuration.CommandExecutionBufferSize),
 		jobs:             make(chan cmdJob, z.configuration.CommandExecutionBufferSize),
 		configuration:    z.configuration,
 		rebalanceChannel: rebalanceChannel,

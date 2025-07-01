@@ -12,17 +12,17 @@ const (
 	ErrorTypeTelnetConnectionIsClosed
 	ErrorTypeNoAvailableNodes
 	ErrorTypeNoAvailableConnections
-	ErrorTypeNoAvailableResources
+	ErrorTypeConnectionWrite
+	ErrorTypeConnectionRead
 )
 
 var (
-	ErrMaxReconnectionsReached  ZError = NewError("maximum number of reconnections reached", ErrorTypeMaxReconnectionsReached)
 	ErrMemcachedInvalidResponse ZError = NewError("invalid memcached command response received", ErrorTypeMemcachedInvalidResponse)
 	ErrMemcachedNoResponse      ZError = NewError("no response from memcached", ErrorTypeMemcachedNoResponse)
 	ErrTelnetConnectionIsClosed ZError = NewError("telnet connection is closed", ErrorTypeTelnetConnectionIsClosed)
 	ErrNoAvailableNodes         ZError = NewError("there are no nodes available", ErrorTypeNoAvailableNodes)
-	ErrNoAvailableConnections   ZError = NewError("there are no available connections", ErrorTypeNoAvailableConnections)
-	ErrNoAvailableResources     ZError = NewError("no available resources", ErrorTypeNoAvailableResources)
+	ErrConnectionWrite          ZError = NewError("error writing to connection", ErrorTypeConnectionWrite)
+	ErrConnectionRead           ZError = NewError("error reading from connection", ErrorTypeConnectionRead)
 )
 
 // ZErrorData - a struc to store some metadata in the error to be an alternative to include zencached deps
