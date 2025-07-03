@@ -26,6 +26,9 @@ type TelnetConfiguration struct {
 	// ReadBufferSize - the size of the read buffer in bytes
 	ReadBufferSize int
 
+	// EnableTracerLogs - enables tracer level logs
+	EnableTracerLogs bool
+
 	// TelnetMetricsCollector - collects metrics related with telnet
 	TelnetMetricsCollector TelnetMetricsCollector
 }

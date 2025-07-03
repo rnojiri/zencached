@@ -122,7 +122,7 @@ func (t *Telnet) checkConnection() {
 
 		case tickerTime := <-t.connCheckTicker.C:
 
-			if logh.DebugEnabled {
+			if t.configuration.EnableTracerLogs && logh.DebugEnabled {
 				t.logger.Debug().Msgf("executing connection check: %s", tickerTime.Format(time.RFC3339))
 			}
 
@@ -166,6 +166,10 @@ func (t *Telnet) checkConnection() {
 				}
 			}
 
+			if t.configuration.EnableTracerLogs && logh.DebugEnabled {
+				t.logger.Debug().Msgf("connection tested with success: %s", address.IP.String())
+			}
+
 		default:
 
 			<-time.After(t.configuration.ConnectionCheckIdleWait)
@@ -178,7 +182,7 @@ func (t *Telnet) resolveServerAddress() (string, *net.TCPAddr, error) {
 
 	hostAndPort := t.node.String()
 
-	if logh.DebugEnabled {
+	if t.configuration.EnableTracerLogs && logh.DebugEnabled {
 		t.logger.Debug().Msgf("resolving address: %s", hostAndPort)
 	}
 
@@ -522,4 +526,8 @@ func (t *Telnet) reportDisconnection() {
 
 	t.onFailure.CompareAndSwap(false, true)
 	t.disconnectionChannel <- struct{}{}
+
+	if logh.InfoEnabled {
+		t.logger.Info().Msg("connection failure reported")
+	}
 }
