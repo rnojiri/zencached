@@ -18,6 +18,7 @@ import (
 )
 
 const numNodes int = 3
+const dummyPod string = "dummy-telnet"
 
 var (
 	memcachedPodNames []string
@@ -193,7 +194,7 @@ func (ts *telnetTestSuite) SetupSuite() {
 	}
 
 	var err error
-	ts.telnet, err = zencached.NewTelnet(nodes[rand.Intn(len(nodes))], *createTelnetConf(ts.metricsCollector))
+	ts.telnet, err = zencached.NewTelnet(nodes[rand.Intn(len(nodes))], *createTelnetConf(ts.metricsCollector), nil)
 	if err != nil {
 		ts.T().Fatal(err)
 	}
