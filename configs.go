@@ -11,8 +11,17 @@ type TelnetConfiguration struct {
 	// MaxWriteTimeout - the max time duration to wait a write operation
 	MaxWriteTimeout time.Duration
 
+	// MaxReadTimeout - the max time duration to wait a read operation
+	MaxReadTimeout time.Duration
+
 	// HostConnectionTimeout - the max time duration to wait to connect to a host
 	HostConnectionTimeout time.Duration
+
+	// ConnectionCheckTimeout - the max time duration to wait to check the host connection
+	ConnectionCheckTimeout time.Duration
+
+	// ConnectionCheckIdleWait - the time duration to wait when idle waiting for check connection timeout event
+	ConnectionCheckIdleWait time.Duration
 
 	// ReadBufferSize - the size of the read buffer in bytes
 	ReadBufferSize int
@@ -31,12 +40,24 @@ func (tc *TelnetConfiguration) setDefaults() {
 		tc.MaxWriteTimeout = time.Second
 	}
 
-	if tc.ReadBufferSize < 8192 { // less than 8kb of read buffer is bad
-		tc.ReadBufferSize = 8192
+	if tc.MaxReadTimeout < time.Second {
+		tc.MaxReadTimeout = time.Second
 	}
 
 	if tc.HostConnectionTimeout == 0 {
 		tc.HostConnectionTimeout = 5 * time.Second
+	}
+
+	if tc.ConnectionCheckTimeout == 0 {
+		tc.ConnectionCheckTimeout = 3 * time.Second
+	}
+
+	if tc.ConnectionCheckIdleWait == 0 {
+		tc.ConnectionCheckIdleWait = 100 * time.Millisecond
+	}
+
+	if tc.ReadBufferSize < 8192 { // less than 8kb of read buffer is bad
+		tc.ReadBufferSize = 8192
 	}
 }
 
@@ -62,7 +83,7 @@ type Configuration struct {
 	// NumNodeListRetries - the number of node listing retry after an error
 	NumNodeListRetries int
 
-	// RebalanceOnDisconnection - always rebalance aafter some disconnection
+	// RebalanceOnDisconnection - always rebalance after some disconnection
 	RebalanceOnDisconnection bool
 
 	// ZencachedMetricsCollector - a metrics interface to implement metric extraction

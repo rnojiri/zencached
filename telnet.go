@@ -60,13 +60,16 @@ func (u nodeByName) Less(i, j int) bool {
 
 // Telnet - the telnet structure
 type Telnet struct {
-	address        *net.TCPAddr
-	connection     *net.TCPConn
-	logger         *logh.ContextualLogger
-	configuration  TelnetConfiguration
-	node           Node
-	metricsEnabled bool
-	onFailure      atomic.Bool
+	address              *net.TCPAddr
+	connection           *net.TCPConn
+	logger               *logh.ContextualLogger
+	configuration        TelnetConfiguration
+	node                 Node
+	metricsEnabled       bool
+	onFailure            atomic.Bool
+	connCheckTicker      *time.Ticker
+	connCheckEndChan     chan struct{}
+	disconnectionChannel chan<- struct{}
 }
 
 func interfaceIsNil(subject interface{}) bool {
@@ -77,7 +80,7 @@ func interfaceIsNil(subject interface{}) bool {
 }
 
 // NewTelnet - creates a new telnet connection
-func NewTelnet(node Node, configuration TelnetConfiguration) (*Telnet, error) {
+func NewTelnet(node Node, configuration TelnetConfiguration, disconnectionChannel chan<- struct{}) (*Telnet, error) {
 
 	configuration.setDefaults()
 
@@ -90,35 +93,104 @@ func NewTelnet(node Node, configuration TelnetConfiguration) (*Telnet, error) {
 	}
 
 	t := &Telnet{
-		logger:         logh.CreateContextualLogger("pkg", "zencached/telnet"),
-		configuration:  configuration,
-		node:           node,
-		metricsEnabled: !interfaceIsNil(configuration.TelnetMetricsCollector),
-		onFailure:      atomic.Bool{},
+		logger:               logh.CreateContextualLogger("pkg", "zencached/telnet"),
+		configuration:        configuration,
+		node:                 node,
+		metricsEnabled:       !interfaceIsNil(configuration.TelnetMetricsCollector),
+		onFailure:            atomic.Bool{},
+		connCheckTicker:      time.NewTicker(configuration.ConnectionCheckTimeout),
+		connCheckEndChan:     make(chan struct{}),
+		disconnectionChannel: disconnectionChannel,
 	}
 
 	return t, nil
 }
 
-// resolveServerAddress - configures the server address
-func (t *Telnet) resolveServerAddress() (string, error) {
+func (t *Telnet) checkConnection() {
 
-	hostPort := t.node.String()
+	for {
+		select {
+		case <-t.connCheckEndChan:
+
+			t.connCheckTicker.Stop()
+
+			if logh.InfoEnabled {
+				t.logger.Info().Msg("connection check terminated")
+			}
+
+			return
+
+		case tickerTime := <-t.connCheckTicker.C:
+
+			if logh.DebugEnabled {
+				t.logger.Debug().Msgf("executing connection check: %s", tickerTime.Format(time.RFC3339))
+			}
+
+			if t.onFailure.Load() {
+				if logh.WarnEnabled {
+					t.logger.Warn().Msg("connection is on failure")
+				}
+				continue
+			}
+
+			_, address, err := t.resolveServerAddress()
+			if err != nil {
+				t.reportDisconnection()
+				if logh.ErrorEnabled {
+					t.logger.Error().Msgf("error resolving telnet connection address: %s", t.node.String())
+				}
+				continue
+			}
+
+			if !t.address.IP.Equal(address.IP) {
+				t.reportDisconnection()
+				if logh.ErrorEnabled {
+					t.logger.Error().Msgf("telnet connection ip changed: %s -> %s", t.address.IP.String(), address.IP.String())
+				}
+				continue
+			}
+
+			connection, err := net.DialTCP("tcp", nil, address)
+			if err != nil {
+				t.reportDisconnection()
+				if logh.ErrorEnabled {
+					t.logger.Error().Msgf("error testing telnet connection to ip address: %s", address.IP.String())
+				}
+				continue
+			}
+
+			err = connection.Close()
+			if err != nil {
+				if logh.ErrorEnabled {
+					t.logger.Error().Msgf("error closing the test telnet connection to ip address: %s", address.IP.String())
+				}
+			}
+
+		default:
+
+			<-time.After(t.configuration.ConnectionCheckIdleWait)
+		}
+	}
+}
+
+// resolveServerAddress - configures the server address
+func (t *Telnet) resolveServerAddress() (string, *net.TCPAddr, error) {
+
+	hostAndPort := t.node.String()
 
 	if logh.DebugEnabled {
-		t.logger.Debug().Msgf("resolving address: %s", hostPort)
+		t.logger.Debug().Msgf("resolving address: %s", hostAndPort)
 	}
 
-	var err error
-	t.address, err = net.ResolveTCPAddr("tcp", hostPort)
+	address, err := net.ResolveTCPAddr("tcp", hostAndPort)
 	if err != nil {
 		if logh.ErrorEnabled {
-			t.logger.Error().Err(err).Msgf("error resolving address: %s", hostPort)
+			t.logger.Error().Err(err).Msgf("error resolving address: %s", hostAndPort)
 		}
-		return "", err
+		return "", nil, err
 	}
 
-	return hostPort, nil
+	return hostAndPort, address, nil
 }
 
 // Connect - try to Connect the telnet server
@@ -133,12 +205,12 @@ func (t *Telnet) Connect() error {
 
 	if !t.metricsEnabled {
 
-		hostPort, err = t.resolveServerAddress()
+		hostPort, t.address, err = t.resolveServerAddress()
 
 	} else {
 
 		start := time.Now()
-		hostPort, err = t.resolveServerAddress()
+		hostPort, t.address, err = t.resolveServerAddress()
 		t.configuration.TelnetMetricsCollector.ResolveAddressElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
 	}
 
@@ -164,6 +236,8 @@ func (t *Telnet) Connect() error {
 	if logh.InfoEnabled {
 		t.logger.Info().Msgf("connected to host: %s", hostPort)
 	}
+
+	go t.checkConnection()
 
 	return nil
 }
@@ -214,6 +288,8 @@ func (t *Telnet) Close() {
 	}
 
 	t.connection = nil
+
+	t.connCheckEndChan <- struct{}{}
 }
 
 // send - send some command to the server
@@ -241,7 +317,7 @@ func (t *Telnet) send(command ...[]byte) error {
 		}
 
 		if !wrote {
-			t.onFailure.CompareAndSwap(false, true)
+			t.reportDisconnection()
 			return ErrConnectionWrite
 		}
 	}
@@ -283,6 +359,14 @@ func (t *Telnet) read(responseSet TelnetResponseSet) ([]byte, ResultType, error)
 
 mainLoop:
 	for {
+		err = t.connection.SetReadDeadline(time.Now().Add(t.configuration.MaxReadTimeout))
+		if err != nil {
+			if logh.ErrorEnabled {
+				t.logger.Error().Err(err).Msg("error setting read deadline")
+			}
+			break mainLoop
+		}
+
 		bytesRead, err = t.connection.Read(buffer)
 		if err != nil || bytesRead == 0 {
 			break mainLoop
@@ -306,8 +390,8 @@ mainLoop:
 	}
 
 	if err != nil && err != io.EOF {
+		t.reportDisconnection()
 		t.logConnectionError(err, read)
-		t.onFailure.CompareAndSwap(false, true)
 		return nil, ResultTypeError, err
 	}
 
@@ -428,4 +512,14 @@ func (t *Telnet) GetNode() Node {
 func (t *Telnet) GetNodeHost() string {
 
 	return t.node.Host
+}
+
+func (t *Telnet) reportDisconnection() {
+
+	if t.onFailure.Load() || t.disconnectionChannel == nil {
+		return
+	}
+
+	t.onFailure.CompareAndSwap(false, true)
+	t.disconnectionChannel <- struct{}{}
 }
