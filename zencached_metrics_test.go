@@ -226,10 +226,10 @@ func (ts *zencachedCommonMetricsTestSuite) TestZ2RebalanceMetrics() {
 	ts.GreaterOrEqual(ts.metrics.numNodeListingEvent, 1, "expected a node listing event")
 	ts.GreaterOrEqual(ts.metrics.numNodeListingElapsedTime, 1, "expected a node listing elapsed time event")
 	ts.Equal(0, ts.metrics.numNodeListingError, "expected no node listing errors")
-	ts.Equal(0, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
-	ts.Equal(0, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
-	ts.Equal(0, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
-	ts.GreaterOrEqual(ts.telnetMetrics.numCloseElapsedTime, 1, "expected a close event")
+	ts.Equal(0, ts.telnetMetrics.numSendElapsedTime, "expected no send event")
+	ts.Equal(0, ts.telnetMetrics.numWriteElapsedTime, "expected no write event")
+	ts.Equal(0, ts.telnetMetrics.numReadElapsedTime, "expected no read event")
+	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected no close event")
 }
 
 func (ts *zencachedCommonMetricsTestSuite) TestZ3RebalanceMetricsError() {
@@ -249,14 +249,15 @@ func (ts *zencachedCommonMetricsTestSuite) TestZ3RebalanceMetricsError() {
 
 	ts.instance.Rebalance()
 
-	ts.GreaterOrEqual(ts.metrics.numNodeRebalanceEvent, 1, "expected two rebalance events")
-	ts.GreaterOrEqual(ts.metrics.numNodeRebalanceElapsedTime, 1, "expected two rebalance elapsed time events")
-	ts.Equal(0, ts.metrics.numNodeListingEvent, "expected a node listing event")
-	ts.Equal(0, ts.metrics.numNodeListingElapsedTime, "expected a node listing elapsed time event")
+	ts.GreaterOrEqual(ts.metrics.numNodeRebalanceEvent, 1, "expected more than 1 rebalance events")
+	ts.GreaterOrEqual(ts.metrics.numNodeRebalanceElapsedTime, 1, "expected more than 1 rebalance elapsed time events")
+	ts.GreaterOrEqual(ts.metrics.numNodeListingEvent, 1, "expected more than 1 node listing event")
+	ts.GreaterOrEqual(ts.metrics.numNodeListingElapsedTime, 1, "expected more than 1 node listing elapsed time event")
 	ts.Equal(0, ts.metrics.numNodeListingError, "expected no node listing errors")
 	ts.Equal(0, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
 	ts.Equal(0, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
 	ts.Equal(0, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
+	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
 }
 
 func (ts *zencachedCommonMetricsTestSuite) TestZ4NodeListingErrorMetricsError() {
@@ -267,15 +268,15 @@ func (ts *zencachedCommonMetricsTestSuite) TestZ4NodeListingErrorMetricsError() 
 
 	ts.instance.Rebalance()
 
-	ts.GreaterOrEqual(ts.metrics.numNodeRebalanceEvent, 1, "expected two rebalance events")
-	ts.GreaterOrEqual(ts.metrics.numNodeRebalanceElapsedTime, 1, "expected two rebalance elapsed time events")
-	ts.Equal(0, ts.metrics.numNodeListingEvent, "expected a node listing event")
-	ts.Equal(0, ts.metrics.numNodeListingElapsedTime, "expected a node listing elapsed time event")
-	ts.Equal(0, ts.metrics.numNodeListingError, "expected three node listing errors")
+	ts.GreaterOrEqual(ts.metrics.numNodeRebalanceEvent, 1, "expected more than 1 rebalance events")
+	ts.GreaterOrEqual(ts.metrics.numNodeRebalanceElapsedTime, 1, "expected more than 1 rebalance elapsed time events")
+	ts.GreaterOrEqual(ts.metrics.numNodeListingEvent, 1, "expected more than 1 node listing event")
+	ts.GreaterOrEqual(ts.metrics.numNodeListingElapsedTime, 1, "expected more than 1 node listing elapsed time event")
+	ts.GreaterOrEqual(ts.metrics.numNodeListingError, 1, "expected more than 1 node listing errors")
 	ts.Equal(0, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
 	ts.Equal(0, ts.telnetMetrics.numWriteElapsedTime, "expected a write event")
 	ts.Equal(0, ts.telnetMetrics.numReadElapsedTime, "expected a read event")
-	ts.Equal(0, ts.telnetMetrics.numCloseElapsedTime, "expected a close event")
+	ts.GreaterOrEqual(ts.telnetMetrics.numCloseElapsedTime, 1, "expected more than 1 close events")
 }
 
 func TestZencachedCommonMetricsSuite(t *testing.T) {

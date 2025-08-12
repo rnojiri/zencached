@@ -23,12 +23,13 @@ type cmdJob struct {
 }
 
 type nodeWorkers struct {
-	logger           *logh.ContextualLogger
-	connected        atomic.Bool
-	node             Node
-	jobs             chan cmdJob
-	rebalanceChannel chan<- struct{}
-	configuration    *Configuration
+	logger               *logh.ContextualLogger
+	connected            atomic.Bool
+	node                 Node
+	jobs                 chan cmdJob
+	rebalanceChannel     chan<- struct{}
+	disconnectionChannel chan struct{}
+	configuration        *Configuration
 }
 
 type nodeWorkersByNodeName []*nodeWorkers
@@ -37,10 +38,12 @@ func (u nodeWorkersByNodeName) Len() int {
 
 	return len(u)
 }
+
 func (u nodeWorkersByNodeName) Swap(i, j int) {
 
 	u[i], u[j] = u[j], u[i]
 }
+
 func (u nodeWorkersByNodeName) Less(i, j int) bool {
 
 	return u[i].node.Host < u[j].node.Host
@@ -49,7 +52,7 @@ func (u nodeWorkersByNodeName) Less(i, j int) bool {
 // NewTelnetFromNode - creates a new telnet connection based in this node configuration
 func (nw *nodeWorkers) NewTelnetFromNode() (*Telnet, error) {
 
-	t, err := NewTelnet(nw.node, nw.configuration.TelnetConfiguration)
+	t, err := NewTelnet(nw.node, nw.configuration.TelnetConfiguration, nw.disconnectionChannel)
 	if err != nil {
 		if logh.ErrorEnabled {
 			nw.logger.Error().Str("host", nw.node.Host).Int("port", nw.node.Port).Err(err).Msg("error creating telnet")
@@ -73,7 +76,17 @@ func (nw *nodeWorkers) NewTelnetFromNode() (*Telnet, error) {
 // terminate - closes all connections
 func (nw *nodeWorkers) terminate() {
 
+	if logh.InfoEnabled {
+		nw.logger.Info().Msg("terminating node workers")
+	}
+
+	nw.connected.CompareAndSwap(true, false)
+	close(nw.disconnectionChannel)
 	close(nw.jobs)
+
+	if logh.InfoEnabled {
+		nw.logger.Info().Msg("node workers terminated")
+	}
 }
 
 func (nw *nodeWorkers) work(telnetConn *Telnet, workerID int) {
@@ -95,27 +108,46 @@ func (nw *nodeWorkers) work(telnetConn *Telnet, workerID int) {
 		}
 	}
 
-	nw.connected.Store(false)
-
 	telnetConn.Close()
 
+	nw.connected.CompareAndSwap(true, false)
+
 	if logh.InfoEnabled {
-		nw.logger.Info().Msgf("terminating worker id: %d", workerID)
+		nw.logger.Info().Msgf("worker terminated: %d", workerID)
+	}
+}
+
+func (nw *nodeWorkers) listenForDisconnections() {
+
+	for range nw.disconnectionChannel {
+
+		if logh.InfoEnabled {
+			nw.logger.Info().Msg("disconnection signal received")
+		}
+
+		nw.connected.CompareAndSwap(true, false)
+
+		if nw.configuration.RebalanceOnDisconnection {
+			nw.rebalanceChannel <- struct{}{}
+		}
+	}
+
+	if logh.InfoEnabled {
+		nw.logger.Info().Msg("disconnection channel closed")
 	}
 }
 
 func (z *Zencached) createNodeWorker(node Node, rebalanceChannel chan<- struct{}) (*nodeWorkers, error) {
 
 	nw := &nodeWorkers{
-		logger:           logh.CreateContextualLogger("pkg", "zencached", "node", node.String()),
-		node:             node,
-		connected:        atomic.Bool{},
-		jobs:             make(chan cmdJob, z.configuration.CommandExecutionBufferSize),
-		configuration:    z.configuration,
-		rebalanceChannel: rebalanceChannel,
+		logger:               logh.CreateContextualLogger("pkg", "zencached", "node", node.String()),
+		node:                 node,
+		connected:            atomic.Bool{},
+		jobs:                 make(chan cmdJob, z.configuration.CommandExecutionBufferSize),
+		configuration:        z.configuration,
+		rebalanceChannel:     rebalanceChannel,
+		disconnectionChannel: make(chan struct{}, z.configuration.NumConnectionsPerNode),
 	}
-
-	nw.connected.Store(true)
 
 	for i := 0; i < int(z.configuration.NumConnectionsPerNode); i++ {
 
@@ -127,6 +159,9 @@ func (z *Zencached) createNodeWorker(node Node, rebalanceChannel chan<- struct{}
 
 		go nw.work(telnetConn, i)
 	}
+
+	nw.connected.CompareAndSwap(false, true)
+	go nw.listenForDisconnections()
 
 	return nw, nil
 }

@@ -119,79 +119,57 @@ func (z *Zencached) rebalance() {
 	z.rebalanceLock.Store(true)
 	defer z.rebalanceLock.Store(false)
 
-	var nodes []Node
+	var discoveredNodes []Node
 
 	if !z.metricsEnabled {
 
-		nodes = z.tryListNodes()
+		discoveredNodes = z.tryListNodes()
 
 	} else {
 
 		start := time.Now()
-		nodes = z.tryListNodes()
+		discoveredNodes = z.tryListNodes()
 		z.configuration.ZencachedMetricsCollector.NodeListingElapsedTime(time.Since(start).Nanoseconds())
-		z.configuration.ZencachedMetricsCollector.NodeListingEvent(len(nodes))
+		z.configuration.ZencachedMetricsCollector.NodeListingEvent(len(discoveredNodes))
 	}
 
 	nodeTelnetConns := make([]*nodeWorkers, 0)
 	connectedNodes := []Node{}
-	connectedNodeWorkerMap := map[string]*nodeWorkers{}
+	existingNodeWorkerMap := map[string]*nodeWorkers{}
+	var err error
 
 	for i, node := range z.connectedNodes {
-		connectedNodeWorkerMap[node.String()] = z.nodeWorkerArray[i]
+		existingNodeWorkerMap[node.String()] = z.nodeWorkerArray[i]
 	}
 
-	for _, node := range nodes {
+	for _, discoveredNode := range discoveredNodes {
 
-		nodeKey := node.String()
+		nodeKey := discoveredNode.String()
 
-		if nw, exists := connectedNodeWorkerMap[nodeKey]; exists {
+		nw, exists := existingNodeWorkerMap[nodeKey]
+		if exists {
 
-			telnetConn, err := nw.NewTelnetFromNode()
-
-			if !nw.connected.Load() {
-
-				if err != nil {
-					continue
-				}
-
-				nw.connected.Store(true)
-
-				connectedNodeWorkerMap[nodeKey] = nw
-
-			} else {
-
-				if err != nil {
-					nw.connected.Store(false)
-
-					connectedNodeWorkerMap[nodeKey] = nw
-					continue
-				}
+			if nw.connected.Load() {
+				z.logger.Info().Msgf("node is connected: %s", nodeKey)
+				nodeTelnetConns = append(nodeTelnetConns, nw)
+				connectedNodes = append(connectedNodes, discoveredNode)
+				continue
 			}
 
-			telnetConn.Close()
-
-			nodeTelnetConns = append(nodeTelnetConns, nw)
-			connectedNodes = append(connectedNodes, node)
-
-			continue
+			nw.terminate()
 		}
 
-		nw, err := z.createNodeWorker(node, z.rebalanceChannel)
+		nw, err = z.createNodeWorker(discoveredNode, z.rebalanceChannel)
 		if err != nil {
+			if logh.ErrorEnabled {
+				z.logger.Error().Err(err).Send()
+			}
 			continue
 		}
 
 		nodeTelnetConns = append(nodeTelnetConns, nw)
-		connectedNodes = append(connectedNodes, node)
-		connectedNodeWorkerMap[nodeKey] = nw
-	}
-
-	for _, nw := range connectedNodeWorkerMap {
-
-		if !nw.connected.Load() {
-			nw.terminate()
-		}
+		connectedNodes = append(connectedNodes, discoveredNode)
+		existingNodeWorkerMap[nodeKey] = nw
 	}
 
 	z.nodeWorkerArray = nodeTelnetConns
@@ -201,7 +179,7 @@ func (z *Zencached) rebalance() {
 	sort.Sort(nodeByName(z.connectedNodes))
 
 	if logh.InfoEnabled {
-		z.logger.Info().Msg("rebalancing finished")
+		z.logger.Info().Msgf("rebalancing finished with %d connected nodes", len(nodeTelnetConns))
 	}
 
 	if len(z.connectedNodes) == 0 {

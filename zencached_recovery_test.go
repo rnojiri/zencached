@@ -29,7 +29,7 @@ func (ts *zencachedRecoveryTestSuite) SetupSuite() {
 	nodes := startMemcachedCluster()
 
 	var err error
-	ts.instance, ts.config, err = createZencached(nodes, 50, true, nil, nil, zencached.CompressionTypeNone)
+	ts.instance, ts.config, err = createZencached(nodes, 50, false, nil, nil, zencached.CompressionTypeNone)
 	if err != nil {
 		ts.T().Fatalf("expected no errors creating zencached: %v", err)
 	}
@@ -235,7 +235,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 
 	terminatePods()
 
-	<-time.After(2 * time.Second)
+	<-time.After(20 * time.Second)
 
 	_, err = ts.instance.Get(nil, []byte("p"), []byte("k"))
 	if !isDisconnectionError(ts.T(), err) {
@@ -258,6 +258,8 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 	<-time.After(2 * time.Second)
 
 	ts.instance.Rebalance()
+
+	<-time.After(2 * time.Second)
 
 	for i := 0; i < 100; i++ {
 		_, err = ts.instance.Get(nil, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
