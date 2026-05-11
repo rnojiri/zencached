@@ -520,6 +520,12 @@ func (t *Telnet) GetNodeHost() string {
 
 func (t *Telnet) reportDisconnection() {
 
+	defer func() {
+		if r := recover(); r != nil {
+			t.logger.Error().Msgf("panic recovered in reportDisconnection: %v", r)
+		}
+	}()
+
 	if t.onFailure.Load() || t.disconnectionChannel == nil {
 		return
 	}
