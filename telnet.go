@@ -139,7 +139,7 @@ func (t *Telnet) checkConnection() {
 				if logh.ErrorEnabled {
 					t.logger.Error().Msgf("error resolving telnet connection address: %s", t.node.String())
 				}
-				continue
+				return
 			}
 
 			if !t.address.IP.Equal(address.IP) {
@@ -147,7 +147,7 @@ func (t *Telnet) checkConnection() {
 				if logh.ErrorEnabled {
 					t.logger.Error().Msgf("telnet connection ip changed: %s -> %s", t.address.IP.String(), address.IP.String())
 				}
-				continue
+				return
 			}
 
 			connection, err := net.DialTCP("tcp", nil, address)
@@ -156,7 +156,7 @@ func (t *Telnet) checkConnection() {
 				if logh.ErrorEnabled {
 					t.logger.Error().Msgf("error testing telnet connection to ip address: %s", address.IP.String())
 				}
-				continue
+				return
 			}
 
 			err = connection.Close()
@@ -520,12 +520,18 @@ func (t *Telnet) GetNodeHost() string {
 
 func (t *Telnet) reportDisconnection() {
 
+	defer func() {
+		if r := recover(); r != nil {
+			t.logger.Error().Msgf("panic recovered in reportDisconnection: %v", r)
+		}
+	}()
+
 	if t.onFailure.Load() || t.disconnectionChannel == nil {
 		return
 	}
 
-	t.onFailure.CompareAndSwap(false, true)
 	t.disconnectionChannel <- struct{}{}
+	t.onFailure.CompareAndSwap(false, true)
 
 	if logh.InfoEnabled {
 		t.logger.Info().Msg("connection failure reported")
