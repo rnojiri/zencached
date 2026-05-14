@@ -291,7 +291,7 @@ Run benchmarks:
 ```bash
 go test -bench=. ./...
 ```
-
+ 
 ## Documentation
 
 Complete documentation is available in the [docs](./docs) folder:
