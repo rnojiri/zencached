@@ -1,6 +1,7 @@
 package zencached_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -113,7 +114,7 @@ func (ts *zencachedMetricsTestSuite) SetupSuite() {
 	terminatePods()
 
 	var err error
-	ts.memcachedHost, err = dockerh.CreateMemcached(memcachedMetricsPodName, memcachedMetricsPodPort, 64)
+	ts.memcachedHost, err = dockerh.CreateMemcached(memcachedMetricsPodName, memcachedMetricsPodPort, 64, "1m")
 	if err != nil {
 		ts.T().Fatalf("expected no errors creating memcached metrics pod: %v", err)
 	}
@@ -155,10 +156,10 @@ type zencachedCommonMetricsTestSuite struct {
 
 func (ts *zencachedCommonMetricsTestSuite) TestCommandExecutionEvents() {
 
-	ts.instance.Add(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
-	ts.instance.Set(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
-	ts.instance.Get(nil, []byte("path1"), []byte("key1"))
-	ts.instance.Delete(nil, []byte("path1"), []byte("key1"))
+	ts.instance.Add(context.Background(), nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
+	ts.instance.Set(context.Background(), nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
+	ts.instance.Get(context.Background(), nil, []byte("path1"), []byte("key1"))
+	ts.instance.Delete(context.Background(), nil, []byte("path1"), []byte("key1"))
 
 	ts.Equal(4, ts.metrics.numCommandExecution, "expects four command execution events")
 	ts.Equal(4, ts.metrics.numCommandExecutionElapsedTime, "expects four command execution time measurements")
@@ -172,9 +173,9 @@ func (ts *zencachedCommonMetricsTestSuite) TestCommandExecutionEvents() {
 
 func (ts *zencachedCommonMetricsTestSuite) TestCacheMissEvents() {
 
-	ts.instance.Get(nil, []byte("path1"), []byte("key1"))
-	ts.instance.Get([]byte("hash"), []byte("path2"), []byte("key2"))
-	ts.instance.ClusterGet([]byte("path3"), []byte("key3"))
+	ts.instance.Get(context.Background(), nil, []byte("path1"), []byte("key1"))
+	ts.instance.Get(context.Background(), []byte("hash"), []byte("path2"), []byte("key2"))
+	ts.instance.ClusterGet(context.Background(), []byte("path3"), []byte("key3"))
 
 	ts.Equal(3, ts.metrics.numCacheMissEvent, "expects three cache miss events")
 	ts.Equal(3, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
@@ -185,10 +186,10 @@ func (ts *zencachedCommonMetricsTestSuite) TestCacheMissEvents() {
 
 func (ts *zencachedCommonMetricsTestSuite) TestCacheHitEvents() {
 
-	ts.instance.Set(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
-	ts.instance.Get(nil, []byte("path1"), []byte("key1"))
-	ts.instance.ClusterGet([]byte("path1"), []byte("key1"))
-	ts.instance.Delete(nil, []byte("path1"), []byte("key1"))
+	ts.instance.Set(context.Background(), nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
+	ts.instance.Get(context.Background(), nil, []byte("path1"), []byte("key1"))
+	ts.instance.ClusterGet(context.Background(), []byte("path1"), []byte("key1"))
+	ts.instance.Delete(context.Background(), nil, []byte("path1"), []byte("key1"))
 
 	ts.Equal(2, ts.metrics.numCacheHitEvent, "expects two cache hit events")
 	ts.Equal(4, ts.telnetMetrics.numSendElapsedTime, "expected a send event")
@@ -205,10 +206,10 @@ func (ts *zencachedCommonMetricsTestSuite) TestZ1CommandExecutionError() {
 		return
 	}
 
-	ts.instance.Add(nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
-	ts.instance.Get(nil, []byte("path1"), []byte("key1"))
-	ts.instance.ClusterGet([]byte("path1"), []byte("key1"))
-	ts.instance.Delete(nil, []byte("path1"), []byte("key1"))
+	ts.instance.Add(context.Background(), nil, []byte("path1"), []byte("key1"), []byte("value1"), defaultTTL)
+	ts.instance.Get(context.Background(), nil, []byte("path1"), []byte("key1"))
+	ts.instance.ClusterGet(context.Background(), []byte("path1"), []byte("key1"))
+	ts.instance.Delete(context.Background(), nil, []byte("path1"), []byte("key1"))
 
 	ts.Equal(4, ts.metrics.numCommandExecutionError, "expects four command execution error events")
 	ts.Equal(4, ts.telnetMetrics.numSendElapsedTime, "expected a send event")

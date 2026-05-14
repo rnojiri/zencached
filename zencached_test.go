@@ -2,6 +2,7 @@ package zencached_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -178,7 +179,7 @@ func (ts *zencachedTestSuite) rawSetKey(telnetConn *zencached.Telnet, path, key,
 
 	}
 
-	err = telnetConn.Send([]byte(fmt.Sprintf("set %s%s 0 %d %d\r\n%s\r\n", path, key, 60, len(tvalue), string(tvalue))))
+	err = telnetConn.Send(context.Background(), []byte(fmt.Sprintf("set %s%s 0 %d %d\r\n%s\r\n", path, key, 60, len(tvalue), string(tvalue))))
 	if !ts.NoError(err, "expected no error sending set command") {
 		return
 	}
@@ -186,6 +187,7 @@ func (ts *zencachedTestSuite) rawSetKey(telnetConn *zencached.Telnet, path, key,
 	expectedRandomType := randomResultType()
 
 	_, resultType, err := telnetConn.Read(
+		context.Background(),
 		zencached.TelnetResponseSet{
 			ResponseSets: [][]byte{[]byte("STORED")},
 			ResultTypes:  []zencached.ResultType{expectedRandomType},
@@ -238,7 +240,7 @@ func (ts *zencachedTestSuite) TestAddCommandWithInvalidKey() {
 	ts.genericInvalidKeyTests(
 		func(route, path, key []byte) []error {
 			value := []byte("value")
-			_, err := ts.instance.Add(route, path, key, value, defaultTTL)
+			_, err := ts.instance.Add(context.Background(), route, path, key, value, defaultTTL)
 			return []error{err}
 		},
 	)
@@ -250,7 +252,7 @@ func (ts *zencachedTestSuite) TestSetCommandWithInvalidKey() {
 	ts.genericInvalidKeyTests(
 		func(route, path, key []byte) []error {
 			value := []byte("value")
-			_, err := ts.instance.Set(route, path, key, value, defaultTTL)
+			_, err := ts.instance.Set(context.Background(), route, path, key, value, defaultTTL)
 			return []error{err}
 		},
 	)
@@ -261,7 +263,7 @@ func (ts *zencachedTestSuite) TestGetCommandWithInvalidKey() {
 
 	ts.genericInvalidKeyTests(
 		func(route, path, key []byte) []error {
-			_, err := ts.instance.Get(route, path, key)
+			_, err := ts.instance.Get(context.Background(), route, path, key)
 			return []error{err}
 		},
 	)
@@ -272,7 +274,7 @@ func (ts *zencachedTestSuite) TestDeleteCommandWithInvalidKey() {
 
 	ts.genericInvalidKeyTests(
 		func(route, path, key []byte) []error {
-			_, err := ts.instance.Delete(route, path, key)
+			_, err := ts.instance.Delete(context.Background(), route, path, key)
 			return []error{err}
 		},
 	)
@@ -283,7 +285,7 @@ func (ts *zencachedTestSuite) TestAddCommand() {
 
 	f := func(route []byte, path, key, value string, expectedResultType zencached.ResultType, testIndex int) {
 
-		result, err := ts.instance.Add(route, []byte(path), []byte(key), []byte(value), defaultTTL)
+		result, err := ts.instance.Add(context.Background(), route, []byte(path), []byte(key), []byte(value), defaultTTL)
 		if !ts.NoError(err, "expected no error storing key") {
 			return
 		}
@@ -323,7 +325,7 @@ func (ts *zencachedTestSuite) TestGetCommand() {
 
 		ts.rawSetKey(t, path, key, value)
 
-		result, err := ts.instance.Get(route, []byte(path), []byte(key))
+		result, err := ts.instance.Get(context.Background(), route, []byte(path), []byte(key))
 		if !ts.NoError(err, "expected no error retrieving key") {
 			return
 		}
@@ -351,7 +353,7 @@ func (ts *zencachedTestSuite) TestSetCommand() {
 
 	f := func(route []byte, path, key, value string, testIndex int) {
 
-		result, err := ts.instance.Set(route, []byte(path), []byte(key), []byte(value), defaultTTL)
+		result, err := ts.instance.Set(context.Background(), route, []byte(path), []byte(key), []byte(value), defaultTTL)
 		if !ts.NoError(err, "expected no error storing key") {
 			return
 		}
@@ -360,7 +362,7 @@ func (ts *zencachedTestSuite) TestSetCommand() {
 			return
 		}
 
-		result, err = ts.instance.Get(route, []byte(path), []byte(key))
+		result, err = ts.instance.Get(context.Background(), route, []byte(path), []byte(key))
 		if !ts.NoError(err, "expected no error getting key") {
 			return
 		}
@@ -404,7 +406,7 @@ func (ts *zencachedTestSuite) TestDeleteCommand() {
 			ts.rawSetKey(t, path, key, value)
 		}
 
-		result, err := ts.instance.Delete(route, []byte(path), []byte(key))
+		result, err := ts.instance.Delete(context.Background(), route, []byte(path), []byte(key))
 		if !ts.NoError(err, "expected no error storing key") {
 			return
 		}
@@ -414,7 +416,7 @@ func (ts *zencachedTestSuite) TestDeleteCommand() {
 				return
 			}
 
-			result, err := ts.instance.Get(route, []byte(path), []byte(key))
+			result, err := ts.instance.Get(context.Background(), route, []byte(path), []byte(key))
 			if !ts.NoError(err, "expected no error storing key") {
 				return
 			}
@@ -457,7 +459,7 @@ func (ts *zencachedTestSuite) TestVersionCommand() {
 
 	defer t.Close()
 
-	err = t.Send([]byte("version\r\n"))
+	err = t.Send(context.Background(), []byte("version\r\n"))
 	if !ts.NoError(err, "error sending version command") {
 		return
 	}
@@ -465,6 +467,7 @@ func (ts *zencachedTestSuite) TestVersionCommand() {
 	expectedRandomType := randomResultType()
 
 	payload, resultType, err := t.Read(
+		context.Background(),
 		zencached.TelnetResponseSet{
 			ResponseSets: [][]byte{[]byte("VERSION")},
 			ResultTypes:  []zencached.ResultType{expectedRandomType},
@@ -476,7 +479,7 @@ func (ts *zencachedTestSuite) TestVersionCommand() {
 
 	ts.Equal(expectedRandomType, resultType, "expected same result type")
 
-	result, err := ts.instance.Version(nil)
+	result, err := ts.instance.Version(context.Background(), nil)
 	if !ts.NoError(err, "error getting version") {
 		return
 	}
@@ -513,7 +516,7 @@ func (ts *zencachedTestSuite) TestGetCommandHugeData() {
 
 	ts.rawSetKey(t, path, key, hugeData.String())
 
-	result, err := ts.instance.Get(nil, []byte(path), []byte(key))
+	result, err := ts.instance.Get(context.Background(), nil, []byte(path), []byte(key))
 	if !ts.NoError(err, "expected no error retrieving key") {
 		return
 	}
@@ -533,16 +536,16 @@ func (ts *zencachedTestSuite) TestSetCommandNullValue() {
 	key := []byte("null-value-key")
 	var value []byte
 
-	result, err := ts.instance.Set(route, path, key, value, defaultTTL)
+	result, err := ts.instance.Set(context.Background(), route, path, key, value, defaultTTL)
 	if !ts.NoError(err, "expected no error storing key") {
 		return
 	}
 
-	if !ts.Equal(zencached.ResultTypeStored.String(), result.Type.String(), "expected value from key \"%s\" to be stored as null", key) {
+	if !ts.Equal(zencached.ResultTypeNotStored.String(), result.Type.String(), "expected value from key \"%s\" to be stored as null", key) {
 		return
 	}
 
-	result, err = ts.instance.Get(route, path, key)
+	result, err = ts.instance.Get(context.Background(), route, path, key)
 	if !ts.NoError(err, "expected no error storing key") {
 		return
 	}

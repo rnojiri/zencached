@@ -1,0 +1,67 @@
+{
+  "formatters": {
+    "enable": [
+      "gofmt",
+      "goimports"
+    ],
+    "exclusions": {
+      "generated": "lax",
+      "paths": [
+        "third_party$",
+        "builtin$",
+        "examples$"
+      ]
+    }
+  },
+  "issues": {
+    "max-issues-per-linter": 30,
+    "max-same-issues": 3
+  },
+  "linters": {
+    "enable": [
+      "asciicheck",
+      "bodyclose",
+      "gosec",
+      "importas",
+      "misspell",
+      "noctx",
+      "prealloc",
+      "sqlclosecheck",
+      "testpackage",
+      "unconvert",
+      "unparam"
+    ],
+    "exclusions": {
+      "generated": "lax",
+      "paths": [
+        "third_party$",
+        "builtin$",
+        "examples$"
+      ],
+      "presets": [
+        "comments",
+        "common-false-positives",
+        "legacy",
+        "std-error-handling"
+      ]
+    },
+    "settings": {
+      "gosec": {
+        "excludes": [
+          "G705",
+          "G117"
+        ]
+      }
+    }
+  },
+  "run": {
+    "allow-parallel-runners": false,
+    "allow-serial-runners": false,
+    "concurrency": 4,
+    "go": "1.26",
+    "issues-exit-code": 1,
+    "modules-download-mode": "vendor",
+    "tests": false
+  },
+  "version": "2"
+}

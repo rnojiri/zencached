@@ -1,6 +1,7 @@
 package zencached_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -32,13 +33,14 @@ func Benchmark(b *testing.B) {
 	key := []byte("benchmark")
 	value := []byte("benchmark")
 	route := []byte{0}
+	ctx := context.Background()
 
 	for n := 0; n < b.N; n++ {
-		_, err := z.Set(route, path, key, value, defaultTTL)
+		_, err := z.Set(ctx, route, path, key, value, defaultTTL)
 		if err != nil {
 			panic(err)
 		}
-		_, err = z.Get(route, path, key)
+		_, err = z.Get(ctx, route, path, key)
 		if err != nil {
 			panic(err)
 		}

@@ -14,4 +14,5 @@ const (
 	ResultTypeDeleted
 	ResultTypeCompressionError
 	ResultTypeDecompressionError
+	ResultTypeContextTimeout
 )

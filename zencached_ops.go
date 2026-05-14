@@ -2,6 +2,7 @@ package zencached
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -77,7 +78,7 @@ var (
 		ResultTypes:  []ResultType{ResultTypeFound},
 	}
 
-	// ErrInvalidKeyFormat - raised when a key has a invlid format
+	// ErrInvalidKeyFormat - raised when a key has a invalid format
 	ErrInvalidKeyFormat error = errors.New("key format is invalid, it should have more than 0 or maximum of 250 bytes without new lines and spaces")
 )
 
@@ -152,7 +153,7 @@ func (z *Zencached) compressIfConfigured(value []byte) ([]byte, error) {
 }
 
 // renderStoreCmd - like Sprintf, but in bytes
-func (z *Zencached) renderStoreCmd(cmd MemcachedCommand, path, key, value []byte, ttl uint64) ([]byte, error) {
+func (z *Zencached) renderStoreCmd(cmd MemcachedCommand, path, key, value []byte, ttl uint64) []byte {
 
 	length := strconv.Itoa(len(value))
 
@@ -174,38 +175,46 @@ func (z *Zencached) renderStoreCmd(cmd MemcachedCommand, path, key, value []byte
 	buffer.Write(value)
 	buffer.Write(doubleBreaks)
 
-	return buffer.Bytes(), nil
+	return buffer.Bytes()
 }
 
 // Set - performs an storage set operation
-func (z *Zencached) Set(routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error) {
+func (z *Zencached) Set(ctx context.Context, routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error) {
 
 	if err := ValidateKey(path, key); err != nil {
 		return nil, err
 	}
 
-	return z.store(Set, routerHash, path, key, value, ttl)
+	return z.store(ctx, Set, routerHash, path, key, value, ttl)
 }
 
 // Add - performs an storage add operation
-func (z *Zencached) Add(routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error) {
+func (z *Zencached) Add(ctx context.Context, routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error) {
 
 	if err := ValidateKey(path, key); err != nil {
 		return nil, err
 	}
 
-	return z.store(Add, routerHash, path, key, value, ttl)
+	return z.store(ctx, Add, routerHash, path, key, value, ttl)
 }
 
 // store - generic store
-func (z *Zencached) store(cmd MemcachedCommand, routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error) {
+func (z *Zencached) store(ctx context.Context, cmd MemcachedCommand, routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error) {
+
+	if len(value) == 0 {
+
+		return &OperationResult{
+			Type: ResultTypeNotStored,
+			Node: Node{},
+		}, nil
+	}
 
 	nw, _, err := z.GetConnectedNodeWorkers(routerHash, path, key)
 	if err != nil {
 		return nil, err
 	}
 
-	return z.baseStore(nw, cmd, path, key, value, ttl)
+	return z.baseStore(ctx, nw, cmd, path, key, value, ttl)
 }
 
 func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
@@ -246,7 +255,7 @@ func (z *Zencached) addJobAndWait(nw *nodeWorkers, job cmdJob) cmdResponse {
 }
 
 // baseStore - base storage function
-func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, value []byte, ttl uint64) (*OperationResult, error) {
+func (z *Zencached) baseStore(ctx context.Context, nw *nodeWorkers, cmd MemcachedCommand, path, key, value []byte, ttl uint64) (*OperationResult, error) {
 
 	tvalue, err := z.compressIfConfigured(value)
 	if err != nil {
@@ -257,15 +266,10 @@ func (z *Zencached) baseStore(nw *nodeWorkers, cmd MemcachedCommand, path, key, 
 		}, err
 	}
 
-	renderedCmd, err := z.renderStoreCmd(cmd, path, key, tvalue, ttl)
-	if err != nil {
-		return &OperationResult{
-			Type: ResultTypeError,
-			Node: nw.node,
-		}, err
-	}
+	renderedCmd := z.renderStoreCmd(cmd, path, key, tvalue, ttl)
 
 	job := cmdJob{
+		ctx:         ctx,
 		cmd:         cmd,
 		responseSet: mcrStoredResponseSet,
 		renderedCmd: renderedCmd,
@@ -303,7 +307,7 @@ func (z *Zencached) renderKeyOnlyCmd(cmd MemcachedCommand, path, key []byte) []b
 }
 
 // Get - performs a get operation
-func (z *Zencached) Get(routerHash, path, key []byte) (*OperationResult, error) {
+func (z *Zencached) Get(ctx context.Context, routerHash, path, key []byte) (*OperationResult, error) {
 
 	if err := ValidateKey(path, key); err != nil {
 		return nil, err
@@ -314,7 +318,7 @@ func (z *Zencached) Get(routerHash, path, key []byte) (*OperationResult, error) 
 		return nil, err
 	}
 
-	return z.baseGet(nw, path, key)
+	return z.baseGet(ctx, nw, path, key)
 }
 
 // extractGetCmdValue - extracts a value from the response
@@ -422,9 +426,10 @@ func (z *Zencached) decompressIfConfigured(value []byte) ([]byte, error) {
 }
 
 // baseGet - performs a get operation
-func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult, error) {
+func (z *Zencached) baseGet(ctx context.Context, nw *nodeWorkers, path, key []byte) (*OperationResult, error) {
 
 	job := cmdJob{
+		ctx:         ctx,
 		cmd:         Get,
 		responseSet: mcrGetCheckBeginResponseSet,
 		renderedCmd: z.renderKeyOnlyCmd(Get, path, key),
@@ -490,7 +495,7 @@ func (z *Zencached) baseGet(nw *nodeWorkers, path, key []byte) (*OperationResult
 }
 
 // Delete - performs a delete operation
-func (z *Zencached) Delete(routerHash, path, key []byte) (*OperationResult, error) {
+func (z *Zencached) Delete(ctx context.Context, routerHash, path, key []byte) (*OperationResult, error) {
 
 	if err := ValidateKey(path, key); err != nil {
 		return nil, err
@@ -501,13 +506,14 @@ func (z *Zencached) Delete(routerHash, path, key []byte) (*OperationResult, erro
 		return nil, err
 	}
 
-	return z.baseDelete(nw, path, key)
+	return z.baseDelete(ctx, nw, path, key)
 }
 
 // baseDelete - performs a delete operation
-func (z *Zencached) baseDelete(nw *nodeWorkers, path, key []byte) (*OperationResult, error) {
+func (z *Zencached) baseDelete(ctx context.Context, nw *nodeWorkers, path, key []byte) (*OperationResult, error) {
 
 	job := cmdJob{
+		ctx:         ctx,
 		cmd:         Delete,
 		responseSet: mcrDeletedResponseSet,
 		renderedCmd: z.renderKeyOnlyCmd(Delete, path, key),
@@ -573,20 +579,21 @@ func (z *Zencached) extractVersionCmdValue(response []byte) ([]byte, error) {
 }
 
 // Version - performs a version operation
-func (z *Zencached) Version(routerHash []byte) (*OperationResult, error) {
+func (z *Zencached) Version(ctx context.Context, routerHash []byte) (*OperationResult, error) {
 
 	nw, _, err := z.GetConnectedNodeWorkers(routerHash, nil, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return z.baseVersion(nw)
+	return z.baseVersion(ctx, nw)
 }
 
 // baseVersion - performs a get operation
-func (z *Zencached) baseVersion(nw *nodeWorkers) (*OperationResult, error) {
+func (z *Zencached) baseVersion(ctx context.Context, nw *nodeWorkers) (*OperationResult, error) {
 
 	job := cmdJob{
+		ctx:         ctx,
 		cmd:         Version,
 		responseSet: mcrVersionResponseSet,
 		renderedCmd: z.renderNoParameterCmd(Version),
