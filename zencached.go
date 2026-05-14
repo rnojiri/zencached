@@ -42,13 +42,13 @@ func New(configuration *Configuration) (*Zencached, error) {
 		dataCompressor:   nil,
 	}
 
-	if configuration.CompressionConfiguration.CompressionType != CompressionTypeNone {
+	if configuration.CompressionType != CompressionTypeNone {
 
 		var err error
 
 		z.dataCompressor, err = NewDataCompressor(
-			configuration.CompressionConfiguration.CompressionType,
-			configuration.CompressionConfiguration.CompressionLevel,
+			configuration.CompressionType,
+			configuration.CompressionLevel,
 		)
 
 		z.compressionEnabled = true

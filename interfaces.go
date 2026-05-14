@@ -1,33 +1,35 @@
 package zencached
 
+import "context"
+
 type IZencached interface {
 
 	// Shutdown - closes all connections
 	Shutdown()
 
 	// Set - performs an storage set operation
-	Set(routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error)
+	Set(ctx context.Context, routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error)
 
 	// Add - performs an storage add operation
-	Add(routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error)
+	Add(ctx context.Context, routerHash, path, key, value []byte, ttl uint64) (*OperationResult, error)
 
 	// Get - performs a get operation
-	Get(routerHash, path, key []byte) (*OperationResult, error)
+	Get(ctx context.Context, routerHash, path, key []byte) (*OperationResult, error)
 
 	// Delete - performs a delete operation
-	Delete(routerHash, path, key []byte) (*OperationResult, error)
+	Delete(ctx context.Context, routerHash, path, key []byte) (*OperationResult, error)
 
 	// ClusterSet - performs an full storage set operation
-	ClusterSet(path, key, value []byte, ttl uint64) ([]*OperationResult, []error)
+	ClusterSet(ctx context.Context, path, key, value []byte, ttl uint64) ([]*OperationResult, []error)
 
 	// ClusterAdd - performs an full storage add operation
-	ClusterAdd(path, key, value []byte, ttl uint64) ([]*OperationResult, []error)
+	ClusterAdd(ctx context.Context, path, key, value []byte, ttl uint64) ([]*OperationResult, []error)
 
 	// ClusterGet - returns a full replicated key stored in the cluster
-	ClusterGet(path, key []byte) ([]*OperationResult, []error)
+	ClusterGet(ctx context.Context, path, key []byte) ([]*OperationResult, []error)
 
 	// ClusterDelete - deletes a key from all cluster nodes
-	ClusterDelete(path, key []byte) ([]*OperationResult, []error)
+	ClusterDelete(ctx context.Context, path, key []byte) ([]*OperationResult, []error)
 
 	// Rebalance - rebalance all nodes using the configured node listing function or the configured nodes by default
 	Rebalance()

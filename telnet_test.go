@@ -2,9 +2,12 @@ package zencached_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"math/rand"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,7 +21,6 @@ import (
 )
 
 const numNodes int = 3
-const dummyPod string = "dummy-telnet"
 
 var (
 	memcachedPodNames []string
@@ -45,7 +47,7 @@ func createExtraMemcachedPod(t *testing.T) (newPodName string, newNode zencached
 	var err error
 	newPodName = "memcached-pod-extra"
 	newNode.Port = memcachedPodPort[len(memcachedPodPort)-1] + 1
-	newNode.Host, err = dockerh.CreateMemcached(newPodName, newNode.Port, 64)
+	newNode.Host, err = dockerh.CreateMemcached(newPodName, newNode.Port, 64, "10m")
 	assert.NoError(t, err, "expected no error creating a new pod")
 
 	return
@@ -73,7 +75,7 @@ func startMemcachedCluster() []zencached.Node {
 	for i := 0; i < numNodes; i++ {
 
 		go func(i int) {
-			nodes[i].Host, err = dockerh.CreateMemcached(memcachedPodNames[i], memcachedPodPort[i], 64)
+			nodes[i].Host, err = dockerh.CreateMemcached(memcachedPodNames[i], memcachedPodPort[i], 64, "10m")
 			if err != nil {
 				panic(err)
 			}
@@ -176,6 +178,8 @@ func createTelnetConf(metricsCollector zencached.TelnetMetricsCollector) *zencac
 		HostConnectionTimeout:  time.Second,
 		ReadBufferSize:         2048,
 		TelnetMetricsCollector: metricsCollector,
+		MaxWriteTimeout:        10 * time.Second,
+		MaxReadTimeout:         10 * time.Second,
 	}
 
 	return tc
@@ -183,7 +187,7 @@ func createTelnetConf(metricsCollector zencached.TelnetMetricsCollector) *zencac
 
 func (ts *telnetTestSuite) SetupSuite() {
 
-	logh.ConfigureGlobalLogger(logh.DEBUG, logh.CONSOLE)
+	logh.ConfigureGlobalLogger(logh.FATAL, logh.CONSOLE)
 
 	terminatePods()
 
@@ -214,6 +218,20 @@ func (ts *telnetTestSuite) TearDownSuite() {
 	terminatePods()
 }
 
+func (ts *telnetTestSuite) write(ctx context.Context, key string, ttl, payloadSize int) error {
+
+	largeBuffer := strings.Builder{}
+	largeBuffer.WriteString("set " + key + " 0 " + strconv.Itoa(ttl) + " " + strconv.Itoa(payloadSize) + "\r\n")
+
+	for i := 0; i < payloadSize; i++ {
+		largeBuffer.WriteByte('a')
+	}
+
+	largeBuffer.WriteString("\r\n")
+
+	return ts.telnet.Send(ctx, []byte(largeBuffer.String()))
+}
+
 // TestConnectionOpenClose - tests the open and close
 func (ts *telnetTestSuite) TestConnectionOpenClose() {
 
@@ -239,7 +257,7 @@ func (ts *telnetTestSuite) TestInfoCommand() {
 		return
 	}
 
-	err = ts.telnet.Send([]byte("stats\r\n"))
+	err = ts.telnet.Send(context.Background(), []byte("stats\r\n"))
 	if !ts.NoError(err, "error sending command") {
 		return
 	}
@@ -247,6 +265,7 @@ func (ts *telnetTestSuite) TestInfoCommand() {
 	expectedRandomType := randomResultType()
 
 	payload, resultType, err := ts.telnet.Read(
+		context.Background(),
 		zencached.TelnetResponseSet{
 			ResponseSets: [][]byte{[]byte("END")},
 			ResultTypes:  []zencached.ResultType{expectedRandomType},
@@ -281,7 +300,7 @@ func (ts *telnetTestSuite) TestInsertCommand() {
 		return
 	}
 
-	err = ts.telnet.Send([]byte("add gotest 0 10 4\r\ntest\r\n"))
+	err = ts.write(context.Background(), "insert-key", 10, 4)
 	if !ts.NoError(err, "error sending set command") {
 		return
 	}
@@ -289,6 +308,7 @@ func (ts *telnetTestSuite) TestInsertCommand() {
 	expectedRandomType := randomResultType()
 
 	payload, resultType, err := ts.telnet.Read(
+		context.Background(),
 		zencached.TelnetResponseSet{
 			ResponseSets: [][]byte{[]byte("STORED")},
 			ResultTypes:  []zencached.ResultType{expectedRandomType},
@@ -301,7 +321,7 @@ func (ts *telnetTestSuite) TestInsertCommand() {
 	ts.Equal(expectedRandomType, resultType, "expected same result type")
 	ts.True(bytes.Contains(payload, []byte("STORED")), "expected \"STORED\" as answer")
 
-	err = ts.telnet.Send([]byte("get gotest\r\n"))
+	err = ts.telnet.Send(context.Background(), []byte("get insert-key\r\n"))
 	if !ts.NoError(err, "error sending get command") {
 		return
 	}
@@ -309,6 +329,7 @@ func (ts *telnetTestSuite) TestInsertCommand() {
 	expectedRandomType = randomResultType()
 
 	payload, resultType, err = ts.telnet.Read(
+		context.Background(),
 		zencached.TelnetResponseSet{
 			ResponseSets: [][]byte{[]byte("END")},
 			ResultTypes:  []zencached.ResultType{expectedRandomType},
@@ -319,7 +340,7 @@ func (ts *telnetTestSuite) TestInsertCommand() {
 	}
 
 	ts.Equal(expectedRandomType, resultType, "expected same result type")
-	ts.True(bytes.Contains(payload, []byte("test")), "expected \"test\" to be stored")
+	ts.True(bytes.Contains(payload, []byte("aaaa")), "expected \"aaaa\" to be stored")
 
 	ts.telnet.Close()
 
@@ -332,6 +353,102 @@ func (ts *telnetTestSuite) TestInsertCommand() {
 		ts.Equal(1, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
 		ts.Equal(2, ts.metricsCollector.numWriteDataSize, "expected 2 write data size event")
 		ts.Equal(2, ts.metricsCollector.numReadDataSize, "expected 2 read data size event")
+	}
+}
+
+// TestContextTimeoutReadCommand - tests a read command with a context timeout, it should return an error and not crash the connection
+func (ts *telnetTestSuite) TestContextTimeoutReadCommand() {
+
+	err := ts.telnet.Connect()
+	if !ts.NoError(err, "error connecting") {
+		return
+	}
+
+	payloadSize := 4_000_000 // 4mb, more than the read buffer size
+	err = ts.write(context.Background(), "ctx-timeout-read-key", 60, payloadSize)
+	if !ts.NoError(err, "error sending set command") {
+		return
+	}
+
+	expectedRandomType := randomResultType()
+
+	payload, resultType, err := ts.telnet.Read(
+		context.Background(),
+		zencached.TelnetResponseSet{
+			ResponseSets: [][]byte{[]byte("STORED")},
+			ResultTypes:  []zencached.ResultType{expectedRandomType},
+		},
+	)
+	if !ts.NoError(err, "error reading response") {
+		return
+	}
+
+	ts.Equal(expectedRandomType, resultType, "expected same result type")
+	ts.True(bytes.Contains(payload, []byte("STORED")), "expected \"STORED\" as answer")
+
+	err = ts.telnet.Send(context.Background(), []byte("get ctx-timeout-read-key\r\n"))
+	if !ts.NoError(err, "error sending get command") {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+
+	expectedRandomType = randomResultType()
+
+	payload, resultType, err = ts.telnet.Read(
+		ctx,
+		zencached.TelnetResponseSet{
+			ResponseSets: [][]byte{[]byte("END")},
+			ResultTypes:  []zencached.ResultType{expectedRandomType},
+		},
+	)
+	if !ts.ErrorIs(err, context.DeadlineExceeded, "expects a timeout error") {
+		return
+	}
+
+	ts.telnet.Close()
+
+	if ts.enableMetrics {
+		ts.Equal(1, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
+		ts.Equal(1, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
+		ts.Equal(2, ts.metricsCollector.numSendElapsedTime, "expected 2 send event")
+		ts.Equal(2, ts.metricsCollector.numWriteElapsedTime, "expected 2 write event")
+		ts.Equal(2, ts.metricsCollector.numReadElapsedTime, "expected 2 read event")
+		ts.Equal(1, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
+		ts.Equal(2, ts.metricsCollector.numWriteDataSize, "expected 2 write data size event")
+		ts.Equal(2, ts.metricsCollector.numReadDataSize, "expected 2 read data size event")
+	}
+}
+
+// TestContextTimeoutWriteCommand - tests a write command with a context timeout, it should return an error and not crash the connection
+func (ts *telnetTestSuite) TestContextTimeoutWriteCommand() {
+
+	err := ts.telnet.Connect()
+	if !ts.NoError(err, "error connecting") {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+
+	payloadSize := 4_000_000 // 4mb, more than the read buffer size
+	err = ts.write(ctx, "gotest", 60, payloadSize)
+	if !ts.ErrorIs(err, context.DeadlineExceeded, "expects a timeout error") {
+		return
+	}
+
+	ts.telnet.Close()
+
+	if ts.enableMetrics {
+		ts.Equal(1, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
+		ts.Equal(1, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
+		ts.Equal(1, ts.metricsCollector.numSendElapsedTime, "expected 1 send event")
+		ts.Equal(1, ts.metricsCollector.numWriteElapsedTime, "expected 1 write event")
+		ts.Equal(0, ts.metricsCollector.numReadElapsedTime, "expected 1 read event")
+		ts.Equal(1, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
+		ts.Equal(1, ts.metricsCollector.numWriteDataSize, "expected 1 write data size event")
+		ts.Equal(0, ts.metricsCollector.numReadDataSize, "expected 1 read data size event")
 	}
 }
 

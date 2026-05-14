@@ -1,6 +1,7 @@
 package zencached_test
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -71,17 +72,17 @@ func (ts *zencachedRecoveryTestSuite) loopCommands(exitLoop chan struct{}) {
 			path := []byte{'p'}
 			key := []byte(strconv.Itoa(i))
 
-			_, err := ts.instance.Get(nil, path, key)
+			_, err := ts.instance.Get(context.Background(), nil, path, key)
 			if err != nil && !isDisconnectionError(ts.T(), err) {
 				return
 			}
 
-			_, err = ts.instance.Set(nil, path, key, key, defaultTTL)
+			_, err = ts.instance.Set(context.Background(), nil, path, key, key, defaultTTL)
 			if err != nil && !isDisconnectionError(ts.T(), err) {
 				return
 			}
 
-			_, err = ts.instance.Delete(nil, path, key)
+			_, err = ts.instance.Delete(context.Background(), nil, path, key)
 			if err != nil && !isDisconnectionError(ts.T(), err) {
 				return
 			}
@@ -181,7 +182,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterRebalanceAddingNode() {
 // TestClusterNodeDown - tests the cluster  recovery when a node is down
 func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 
-	_, err := ts.instance.Get([]byte{3}, []byte("p"), []byte("k"))
+	_, err := ts.instance.Get(context.Background(), []byte{3}, []byte("p"), []byte("k"))
 	if !ts.NoError(err, "expected no error executing get in node zero") {
 		return
 	}
@@ -193,12 +194,12 @@ func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 
 	<-time.After(2 * time.Second)
 
-	_, err = ts.instance.Get([]byte{3}, []byte("p"), []byte("k"))
+	_, err = ts.instance.Get(context.Background(), []byte{3}, []byte("p"), []byte("k"))
 	if !isDisconnectionError(ts.T(), err) {
 		return
 	}
 
-	_, err = dockerh.CreateMemcached(memcachedPodNames[1], memcachedPodPort[1], 64)
+	_, err = dockerh.CreateMemcached(memcachedPodNames[1], memcachedPodPort[1], 64, "1m")
 	if !ts.NoError(err, "expected no error creating the memcached pod") {
 		return
 	}
@@ -211,7 +212,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 
 	for i := 0; i < 3; i++ {
 
-		_, err = ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
+		_, err = ts.instance.Get(context.Background(), []byte{10, 199}, []byte("p"), []byte("k"))
 		if err == nil {
 			reconnected = true
 			break
@@ -228,7 +229,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterNodeDown() {
 // TestClusterAllNodesDown - tests the cluster when all nodes are down
 func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 
-	_, err := ts.instance.Get([]byte{10, 199}, []byte("p"), []byte("k"))
+	_, err := ts.instance.Get(context.Background(), []byte{10, 199}, []byte("p"), []byte("k"))
 	if !ts.NoError(err, "expected no error executing get in node zero") {
 		return
 	}
@@ -237,7 +238,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 
 	<-time.After(20 * time.Second)
 
-	_, err = ts.instance.Get(nil, []byte("p"), []byte("k"))
+	_, err = ts.instance.Get(context.Background(), nil, []byte("p"), []byte("k"))
 	if !isDisconnectionError(ts.T(), err) {
 		return
 	}
@@ -245,7 +246,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 	ts.instance.Rebalance()
 
 	for i := 0; i < 100; i++ {
-		_, err = ts.instance.Get([]byte{byte(i)}, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
+		_, err = ts.instance.Get(context.Background(), []byte{byte(i)}, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
 		if !isDisconnectionError(ts.T(), err) {
 			return
 		}
@@ -262,7 +263,7 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 	<-time.After(2 * time.Second)
 
 	for i := 0; i < 100; i++ {
-		_, err = ts.instance.Get(nil, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
+		_, err = ts.instance.Get(context.Background(), nil, []byte("p"), []byte(fmt.Sprintf("k%d", i)))
 		if !ts.NoError(err, "expected no errors after rebalancing") {
 			return
 		}
