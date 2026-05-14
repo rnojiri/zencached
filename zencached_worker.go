@@ -171,6 +171,15 @@ func (z *Zencached) createNodeWorker(node Node, rebalanceChannel chan<- struct{}
 // GetNodeWorkersByIndex - returns a telnet connection by node index
 func (z *Zencached) GetNodeWorkersByIndex(index int) (nw *nodeWorkers, err error) {
 
+	z.nodeWorkersMu.RLock()
+	defer z.nodeWorkersMu.RUnlock()
+
+	return z.getNodeWorkersByIndex(index)
+}
+
+// getNodeWorkersByIndex - caller must hold nodeWorkersMu.RLock()
+func (z *Zencached) getNodeWorkersByIndex(index int) (nw *nodeWorkers, err error) {
+
 	if !z.nodeWorkerArray[index].connected.Load() {
 		return nil, ErrTelnetConnectionIsClosed
 	}
@@ -182,6 +191,13 @@ func (z *Zencached) GetNodeWorkersByIndex(index int) (nw *nodeWorkers, err error
 func (z *Zencached) GetConnectedNodeWorkers(routerHash, path, key []byte) (nw *nodeWorkers, index int, err error) {
 
 	if z.notAvailable.Load() {
+		return nil, 0, ErrNoAvailableNodes
+	}
+
+	z.nodeWorkersMu.RLock()
+	defer z.nodeWorkersMu.RUnlock()
+
+	if len(z.nodeWorkerArray) == 0 {
 		return nil, 0, ErrNoAvailableNodes
 	}
 
@@ -203,7 +219,7 @@ func (z *Zencached) GetConnectedNodeWorkers(routerHash, path, key []byte) (nw *n
 
 	index = int(routerHash[len(routerHash)-1]) % len(z.nodeWorkerArray)
 
-	nw, err = z.GetNodeWorkersByIndex(index)
+	nw, err = z.getNodeWorkersByIndex(index)
 
 	return
 }
