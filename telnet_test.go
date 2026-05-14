@@ -69,12 +69,12 @@ func startMemcachedCluster() []zencached.Node {
 	wc := sync.WaitGroup{}
 	wc.Add(numNodes)
 
-	var err error
 	nodes := make([]zencached.Node, numNodes)
 
 	for i := 0; i < numNodes; i++ {
 
 		go func(i int) {
+			var err error
 			nodes[i].Host, err = dockerh.CreateMemcached(memcachedPodNames[i], memcachedPodPort[i], 64, "10m")
 			if err != nil {
 				panic(err)

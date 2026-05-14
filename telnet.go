@@ -296,7 +296,10 @@ func (t *Telnet) Close() {
 
 	t.connection = nil
 
-	t.connCheckEndChan <- struct{}{}
+	select {
+	case t.connCheckEndChan <- struct{}{}:
+	default:
+	}
 }
 
 // send - send some command to the server
@@ -558,18 +561,19 @@ func (t *Telnet) GetNodeHost() string {
 
 func (t *Telnet) reportDisconnection() {
 
+	if !t.onFailure.CompareAndSwap(false, true) {
+		return
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
 			t.logger.Error().Msgf("panic recovered in reportDisconnection: %v", r)
 		}
 	}()
 
-	if t.onFailure.Load() || t.disconnectionChannel == nil {
-		return
+	if t.disconnectionChannel != nil {
+		t.disconnectionChannel <- struct{}{}
 	}
-
-	t.disconnectionChannel <- struct{}{}
-	t.onFailure.CompareAndSwap(false, true)
 
 	if logh.InfoEnabled {
 		t.logger.Info().Msg("connection failure reported")

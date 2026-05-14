@@ -108,7 +108,7 @@ config := &zencached.Configuration{
     // Connection settings
     NumConnectionsPerNode:      5,
     CommandExecutionBufferSize: 1000,
-    
+
     // Node management
     RebalanceOnDisconnection: true,
     NumNodeListRetries:       3,
@@ -291,7 +291,7 @@ Run benchmarks:
 ```bash
 go test -bench=. ./...
 ```
-
+ 
 ## Documentation
 
 Complete documentation is available in the [docs](./docs) folder:

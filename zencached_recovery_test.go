@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -267,6 +268,185 @@ func (ts *zencachedRecoveryTestSuite) TestClusterAllNodesDown() {
 		if !ts.NoError(err, "expected no errors after rebalancing") {
 			return
 		}
+	}
+}
+
+// TestNodeRecreationRecovery - simulates a pod recreation scenario where the checkConnection()
+// goroutine exits early after detecting a failure, and verifies that Close() does not deadlock
+// when called afterward (goroutine leak bug: connCheckEndChan send would block forever).
+func (ts *zencachedRecoveryTestSuite) TestNodeRecreationRecovery() {
+
+	// Find a node bound to 127.0.0.1: these keep their address after container recreation,
+	// whereas Docker-bridge nodes get a new IP on each restart making recovery impossible.
+	// Derive the pod name from the port (memcachedPodPort[i] = 11211+i).
+	var targetNode zencached.Node
+	for _, n := range ts.instance.GetConnectedNodes() {
+		if n.Host == "127.0.0.1" {
+			targetNode = n
+			break
+		}
+	}
+	if !ts.NotEmpty(targetNode.Host, "could not find a 127.0.0.1 node in connected nodes") {
+		return
+	}
+
+	podIndex := targetNode.Port - memcachedPodPort[0]
+	targetPod := memcachedPodNames[podIndex]
+	targetPort := targetNode.Port
+
+	// Create a dedicated single-node instance so routing always hits index 0 (no ambiguity).
+	singleNodeInstance, _, err := createZencached(
+		[]zencached.Node{targetNode},
+		50,
+		false,
+		nil,
+		nil,
+		zencached.CompressionTypeNone,
+	)
+	if !ts.NoError(err, "expected no error creating single-node zencached") {
+		return
+	}
+	defer singleNodeInstance.Shutdown()
+
+	// Baseline: operations must succeed before the test starts.
+	_, err = singleNodeInstance.Get(context.Background(), nil, []byte("p"), []byte("baseline"))
+	if !ts.NoError(err, "expected no error on baseline get") {
+		return
+	}
+
+	// Simulate pod removal (memcached container down — like a Kubernetes pod being recreated).
+	err = dockerh.Remove(targetPod)
+	if !ts.NoError(err, fmt.Sprintf("expected no error removing pod: %s", targetPod)) {
+		return
+	}
+
+	// Wait for checkConnection() to detect the failure and exit its goroutine.
+	// ConnectionCheckTimeout defaults to 3s; we wait 5s to be safe.
+	<-time.After(5 * time.Second)
+
+	// Operations must now return a disconnection error.
+	_, err = singleNodeInstance.Get(context.Background(), nil, []byte("p"), []byte("during-down"))
+	if !isDisconnectionError(ts.T(), err) {
+		return
+	}
+
+	// Recreate the pod (simulates Kubernetes bringing the container back).
+	_, err = dockerh.CreateMemcached(targetPod, targetPort, 64, "1m")
+	if !ts.NoError(err, "expected no error recreating the memcached pod") {
+		return
+	}
+
+	// Give the new container time to be ready.
+	<-time.After(2 * time.Second)
+
+	// Rebalance must complete without deadlocking.
+	done := make(chan struct{})
+	go func() {
+		singleNodeInstance.Rebalance()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Rebalance completed — no deadlock
+	case <-time.After(15 * time.Second):
+		ts.Fail("Rebalance() deadlocked: Close() is likely blocked on connCheckEndChan after checkConnection() goroutine exited early")
+		return
+	}
+
+	// After rebalance, operations must succeed again.
+	recovered := false
+	for i := 0; i < 5; i++ {
+		_, err = singleNodeInstance.Get(context.Background(), nil, []byte("p"), []byte("after-recovery"))
+		if err == nil {
+			recovered = true
+			break
+		}
+		<-time.After(500 * time.Millisecond)
+	}
+
+	ts.True(recovered, "expected successful get after pod recreation and rebalance")
+}
+
+// TestConcurrentDisconnectionDoesNotBlock verifies that when N goroutines fail simultaneously
+// on the same connection, reportDisconnection() does not block any of them.
+//
+// Before the CompareAndSwap fix, multiple goroutines could pass the onFailure.Load() guard
+// simultaneously and all try to send to disconnectionChannel. If the channel was full (capacity =
+// NumConnectionsPerNode), the extra goroutines would block inside reportDisconnection(),
+// causing the entire Get/Set/Delete call to hang forever 
+func (ts *zencachedRecoveryTestSuite) TestConcurrentDisconnectionDoesNotBlock() {
+
+	var targetNode zencached.Node
+	for _, n := range ts.instance.GetConnectedNodes() {
+		if n.Host == "127.0.0.1" {
+			targetNode = n
+			break
+		}
+	}
+	if !ts.NotEmpty(targetNode.Host, "could not find a 127.0.0.1 node in connected nodes") {
+		return
+	}
+
+	podIndex := targetNode.Port - memcachedPodPort[0]
+	targetPod := memcachedPodNames[podIndex]
+	targetPort := targetNode.Port
+
+	const numConns = 3
+	singleNodeInstance, _, err := createZencached(
+		[]zencached.Node{targetNode},
+		100,
+		false,
+		nil,
+		nil,
+		zencached.CompressionTypeNone,
+	)
+	if !ts.NoError(err, "expected no error creating single-node zencached") {
+		return
+	}
+	defer singleNodeInstance.Shutdown()
+
+	_, err = singleNodeInstance.Get(context.Background(), nil, []byte("p"), []byte("concurrent-baseline"))
+	if !ts.NoError(err, "expected no error on baseline get") {
+		return
+	}
+
+	// Stop the node so that all subsequent writes fail immediately with "broken pipe".
+	err = dockerh.Remove(targetPod)
+	if !ts.NoError(err, fmt.Sprintf("expected no error removing pod: %s", targetPod)) {
+		return
+	}
+
+	defer func() {
+		dockerh.CreateMemcached(targetPod, targetPort, 64, "1m")
+	}()
+
+	// Fire more concurrent Gets than the disconnectionChannel capacity (= numConns).
+	// With the old code, goroutines would race inside reportDisconnection():
+	//   - All pass onFailure.Load() == false simultaneously
+	//   - All try to send to the channel (capacity = numConns)
+	//   - The (numConns+1)-th goroutine blocks forever → Get() never returns
+	// With the CompareAndSwap fix, only one goroutine sends; the rest return immediately.
+	concurrency := numConns * 4
+	done := make(chan struct{})
+	go func() {
+		var wg sync.WaitGroup
+		for i := 0; i < concurrency; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				singleNodeInstance.Get(context.Background(), nil, []byte("p"), []byte("concurrent-key"))
+			}()
+		}
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// All Get()s returned — reportDisconnection() did not block any goroutine.
+	case <-time.After(10 * time.Second):
+		ts.Fail("concurrent Get()s blocked: reportDisconnection() likely blocked on a full disconnectionChannel (missing CompareAndSwap guard)")
 	}
 }
 

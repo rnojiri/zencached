@@ -2,6 +2,7 @@ package zencached
 
 import (
 	"sort"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -20,6 +21,7 @@ type Zencached struct {
 	shuttingDown       atomic.Bool
 	rebalanceLock      atomic.Bool
 	notAvailable       atomic.Bool
+	nodeWorkersMu      sync.RWMutex
 	nodeWorkerArray    []*nodeWorkers
 	connectedNodes     []Node
 	rebalanceChannel   chan struct{}
@@ -138,9 +140,11 @@ func (z *Zencached) rebalance() {
 	existingNodeWorkerMap := map[string]*nodeWorkers{}
 	var err error
 
+	z.nodeWorkersMu.RLock()
 	for i, node := range z.connectedNodes {
 		existingNodeWorkerMap[node.String()] = z.nodeWorkerArray[i]
 	}
+	z.nodeWorkersMu.RUnlock()
 
 	for _, discoveredNode := range discoveredNodes {
 
@@ -172,11 +176,13 @@ func (z *Zencached) rebalance() {
 		existingNodeWorkerMap[nodeKey] = nw
 	}
 
+	sort.Sort(nodeWorkersByNodeName(nodeTelnetConns))
+	sort.Sort(nodeByName(connectedNodes))
+
+	z.nodeWorkersMu.Lock()
 	z.nodeWorkerArray = nodeTelnetConns
 	z.connectedNodes = connectedNodes
-
-	sort.Sort(nodeWorkersByNodeName(z.nodeWorkerArray))
-	sort.Sort(nodeByName(z.connectedNodes))
+	z.nodeWorkersMu.Unlock()
 
 	if logh.InfoEnabled {
 		z.logger.Info().Msgf("rebalancing finished with %d connected nodes", len(nodeTelnetConns))
@@ -246,7 +252,12 @@ func (z *Zencached) Shutdown() {
 
 	z.shuttingDown.Store(true)
 
-	for ni, nw := range z.nodeWorkerArray {
+	z.nodeWorkersMu.RLock()
+	workers := make([]*nodeWorkers, len(z.nodeWorkerArray))
+	copy(workers, z.nodeWorkerArray)
+	z.nodeWorkersMu.RUnlock()
+
+	for ni, nw := range workers {
 
 		if logh.InfoEnabled {
 			z.logger.Info().Msgf("closing node connections from index: %d", ni)
@@ -260,6 +271,8 @@ func (z *Zencached) Shutdown() {
 
 // GetConnectedNodes - returns the currently connected nodes
 func (z *Zencached) GetConnectedNodes() []Node {
+	z.nodeWorkersMu.RLock()
+	defer z.nodeWorkersMu.RUnlock()
 
 	c := make([]Node, len(z.connectedNodes))
 	copy(c, z.connectedNodes)
