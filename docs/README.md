@@ -14,7 +14,6 @@ A high-performance, feature-rich memcached client library for Go with support fo
 - [Error Handling](#error-handling)
 - [Examples](#examples)
 - [Testing](#testing)
-- [Documentation](#documentation)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -93,7 +92,7 @@ func main() {
 
 ## Configuration
 
-See [Configuration Guide](./docs/CONFIGURATION.md) for detailed configuration options.
+See [Configuration Guide](./CONFIGURATION.md) for detailed configuration options.
 
 ### Basic Configuration Example
 
@@ -108,7 +107,7 @@ config := &zencached.Configuration{
     // Connection settings
     NumConnectionsPerNode:      5,
     CommandExecutionBufferSize: 1000,
-
+    
     // Node management
     RebalanceOnDisconnection: true,
     NumNodeListRetries:       3,
@@ -248,7 +247,7 @@ func (m *MyMetricsCollector) CacheHitEvent(node string, operation, path, key []b
 config.ZencachedMetricsCollector = &MyMetricsCollector{}
 ```
 
-See [Metrics Reference](./docs/METRICS.md) for all available metrics hooks.
+See [Metrics Reference](./METRICS.md) for all available metrics hooks.
 
 ## Error Handling
 
@@ -264,19 +263,17 @@ if err != nil {
 }
 ```
 
-See [Error Types](./docs/ERROR_TYPES.md) for detailed error handling.
+See [Error Types](./ERROR_TYPES.md) for detailed error handling.
 
 ## Examples
 
-For comprehensive examples, see the [Examples Guide](./docs/EXAMPLES.md):
+See the [Examples Guide](./EXAMPLES.md) for more comprehensive examples:
 
 - Basic operations
 - Cluster operations
 - Compression
 - Metrics collection
 - Custom node discovery
-- Error handling
-- Context usage
 
 ## Testing
 
@@ -291,28 +288,34 @@ Run benchmarks:
 ```bash
 go test -bench=. ./...
 ```
- 
-## Documentation
 
-Complete documentation is available in the [docs](./docs) folder:
+## Architecture
 
-- [API Reference](./docs/API.md) - Complete API documentation
-- [Configuration Guide](./docs/CONFIGURATION.md) - Setup and configuration
-- [Examples](./docs/EXAMPLES.md) - Practical code examples
-- [Architecture](./docs/ARCHITECTURE.md) - System design and internals
-- [Error Types](./docs/ERROR_TYPES.md) - Error handling reference
-- [Metrics](./docs/METRICS.md) - Metrics collection reference
-- [Troubleshooting](./docs/TROUBLESHOOTING.md) - Common issues and solutions
-- [Contributing](./docs/CONTRIBUTING.md) - Contribution guidelines
-- [Documentation Index](./docs/INDEX.md) - Full documentation index
+### Core Components
+
+- **Zencached**: Main client structure that orchestrates all operations
+- **Node Workers**: Manages connection pools and operations per node
+- **Telnet Protocol Handler**: Implements memcached text protocol via Telnet
+- **Data Compressor**: Handles data compression/decompression
+- **Metrics Collector**: Aggregates and reports performance metrics
+
+### Operation Flow
+
+1. Client receives operation request with key and value
+2. Key is validated and optional compression is applied
+3. Target node(s) are selected based on router hash or cluster configuration
+4. Command is sent via Telnet protocol to the target node(s)
+5. Response is parsed and converted to OperationResult
+6. Metrics are collected if enabled
+7. Result is returned to caller
 
 ## Contributing
 
-Contributions are welcome! Please review the [Contributing Guide](./docs/CONTRIBUTING.md) for guidelines on code style, testing, and the pull request process.
+Contributions are welcome! Please follow the Go code style conventions and include tests for new features.
 
 ## License
 
-See the [LICENSE](./LICENSE) file for details.
+See the [LICENSE](../LICENSE) file for details.
 
 ## Support
 

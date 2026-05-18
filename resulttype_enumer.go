@@ -9,11 +9,11 @@ import (
 	"strings"
 )
 
-const _ResultTypeName = "noneerrorfoundnot_foundnot_storedstoreddeletedcompression_errordecompression_error"
+const _ResultTypeName = "noneerrorfoundnot_foundnot_storedstoreddeletedcompression_errordecompression_errorcontext_timeout"
 
-var _ResultTypeIndex = [...]uint8{0, 4, 9, 14, 23, 33, 39, 46, 63, 82}
+var _ResultTypeIndex = [...]uint8{0, 4, 9, 14, 23, 33, 39, 46, 63, 82, 97}
 
-const _ResultTypeLowerName = "noneerrorfoundnot_foundnot_storedstoreddeletedcompression_errordecompression_error"
+const _ResultTypeLowerName = "noneerrorfoundnot_foundnot_storedstoreddeletedcompression_errordecompression_errorcontext_timeout"
 
 func (i ResultType) String() string {
 	if i >= ResultType(len(_ResultTypeIndex)-1) {
@@ -35,9 +35,10 @@ func _ResultTypeNoOp() {
 	_ = x[ResultTypeDeleted-(6)]
 	_ = x[ResultTypeCompressionError-(7)]
 	_ = x[ResultTypeDecompressionError-(8)]
+	_ = x[ResultTypeContextTimeout-(9)]
 }
 
-var _ResultTypeValues = []ResultType{ResultTypeNone, ResultTypeError, ResultTypeFound, ResultTypeNotFound, ResultTypeNotStored, ResultTypeStored, ResultTypeDeleted, ResultTypeCompressionError, ResultTypeDecompressionError}
+var _ResultTypeValues = []ResultType{ResultTypeNone, ResultTypeError, ResultTypeFound, ResultTypeNotFound, ResultTypeNotStored, ResultTypeStored, ResultTypeDeleted, ResultTypeCompressionError, ResultTypeDecompressionError, ResultTypeContextTimeout}
 
 var _ResultTypeNameToValueMap = map[string]ResultType{
 	_ResultTypeName[0:4]:        ResultTypeNone,
@@ -58,6 +59,8 @@ var _ResultTypeNameToValueMap = map[string]ResultType{
 	_ResultTypeLowerName[46:63]: ResultTypeCompressionError,
 	_ResultTypeName[63:82]:      ResultTypeDecompressionError,
 	_ResultTypeLowerName[63:82]: ResultTypeDecompressionError,
+	_ResultTypeName[82:97]:      ResultTypeContextTimeout,
+	_ResultTypeLowerName[82:97]: ResultTypeContextTimeout,
 }
 
 var _ResultTypeNames = []string{
@@ -70,6 +73,7 @@ var _ResultTypeNames = []string{
 	_ResultTypeName[39:46],
 	_ResultTypeName[46:63],
 	_ResultTypeName[63:82],
+	_ResultTypeName[82:97],
 }
 
 // ResultTypeString retrieves an enum value from the enum constants string name.

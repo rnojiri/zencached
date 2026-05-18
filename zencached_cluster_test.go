@@ -2,19 +2,20 @@ package zencached_test
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 
 	"github.com/rnojiri/zencached"
 )
 
 // genericTestClusterStoreCommand - tests a generic store command
-func (ts *zencachedTestSuite) genericTestClusterStoreCommand(command string, storageFunc func(path []byte, key []byte, value []byte, ttl uint64) ([]*zencached.OperationResult, []error)) {
+func (ts *zencachedTestSuite) genericTestClusterStoreCommand(command string, storageFunc func(ctx context.Context, path []byte, key []byte, value []byte, ttl uint64) ([]*zencached.OperationResult, []error)) {
 
 	path := []byte("path")
 	key := []byte(fmt.Sprintf("cluster-storage-%s", command))
 	value := []byte(fmt.Sprintf("cluster-value-storage-%s", command))
 
-	results, errors := storageFunc(path, key, value, defaultTTL)
+	results, errors := storageFunc(context.Background(), path, key, value, defaultTTL)
 
 	if !ts.Len(results, numNodes, "wrong number of nodes") {
 		return
@@ -46,12 +47,13 @@ func (ts *zencachedTestSuite) genericTestClusterStoreCommand(command string, sto
 
 		defer t.Close()
 
-		err = t.Send([]byte("get " + string(path) + string(key) + "\r\n"))
+		err = t.Send(context.Background(), []byte("get "+string(path)+string(key)+"\r\n"))
 		if !ts.NoError(err, "expected success getting key") {
 			return
 		}
 
 		response, _, err := t.Read(
+			context.Background(),
 			zencached.TelnetResponseSet{
 				ResponseSets: [][]byte{[]byte("END")},
 				ResultTypes:  []zencached.ResultType{zencached.ResultTypeNone},
@@ -111,7 +113,7 @@ func (ts *zencachedTestSuite) TestClusterGetCommand() {
 
 	for i := 0; i < 1000; i++ {
 
-		results, errs := ts.instance.ClusterGet([]byte(path), []byte(key))
+		results, errs := ts.instance.ClusterGet(context.Background(), []byte(path), []byte(key))
 
 		for i := 0; i < numNodes; i++ {
 
@@ -139,7 +141,7 @@ func (ts *zencachedTestSuite) TestClusterDeleteCommand() {
 
 	ts.rawSetKeyOnAllNodes(path, key, value)
 
-	results, errors := ts.instance.ClusterDelete([]byte(path), []byte(key))
+	results, errors := ts.instance.ClusterDelete(context.Background(), []byte(path), []byte(key))
 
 	if !ts.Len(results, numNodes, "wrong number of nodes") {
 		return
@@ -171,12 +173,13 @@ func (ts *zencachedTestSuite) TestClusterDeleteCommand() {
 
 		defer t.Close()
 
-		err = t.Send([]byte("get " + key + "\r\n"))
+		err = t.Send(context.Background(), []byte("get "+key+"\r\n"))
 		if !ts.NoError(err, "expected success getting key") {
 			return
 		}
 
 		response, _, err := t.Read(
+			context.Background(),
 			zencached.TelnetResponseSet{
 				ResponseSets: [][]byte{[]byte("END")},
 				ResultTypes:  []zencached.ResultType{zencached.ResultTypeNone},
@@ -198,7 +201,7 @@ func (ts *zencachedTestSuite) TestClusterAddCommandWithInvalidKey() {
 	ts.genericInvalidKeyTests(
 		func(route, path, key []byte) []error {
 			value := []byte("value")
-			_, errs := ts.instance.ClusterAdd(path, key, value, defaultTTL)
+			_, errs := ts.instance.ClusterAdd(context.Background(), path, key, value, defaultTTL)
 			return errs
 		},
 	)
@@ -210,7 +213,7 @@ func (ts *zencachedTestSuite) TestClusterSetCommandWithInvalidKey() {
 	ts.genericInvalidKeyTests(
 		func(route, path, key []byte) []error {
 			value := []byte("value")
-			_, errs := ts.instance.ClusterSet(path, key, value, defaultTTL)
+			_, errs := ts.instance.ClusterSet(context.Background(), path, key, value, defaultTTL)
 			return errs
 		},
 	)
@@ -221,7 +224,7 @@ func (ts *zencachedTestSuite) TestClusterGetCommandWithInvalidKey() {
 
 	ts.genericInvalidKeyTests(
 		func(route, path, key []byte) []error {
-			_, errs := ts.instance.ClusterGet(path, key)
+			_, errs := ts.instance.ClusterGet(context.Background(), path, key)
 			return errs
 		},
 	)
@@ -232,7 +235,7 @@ func (ts *zencachedTestSuite) TestClusterDeleteCommandWithInvalidKey() {
 
 	ts.genericInvalidKeyTests(
 		func(route, path, key []byte) []error {
-			_, errs := ts.instance.ClusterDelete(path, key)
+			_, errs := ts.instance.ClusterDelete(context.Background(), path, key)
 			return errs
 		},
 	)

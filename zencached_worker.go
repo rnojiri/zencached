@@ -1,6 +1,7 @@
 package zencached
 
 import (
+	"context"
 	"errors"
 	"math/rand"
 	"strconv"
@@ -16,6 +17,7 @@ type cmdResponse struct {
 }
 
 type cmdJob struct {
+	ctx                    context.Context
 	cmd                    MemcachedCommand
 	responseSet            TelnetResponseSet
 	renderedCmd, path, key []byte
@@ -93,7 +95,7 @@ func (nw *nodeWorkers) work(telnetConn *Telnet, workerID int) {
 
 	for job := range nw.jobs {
 
-		response := nw.sendAndReadResponse(telnetConn, job.responseSet, job.renderedCmd)
+		response := nw.sendAndReadResponse(job.ctx, telnetConn, job.responseSet, job.renderedCmd)
 
 		job.response <- response
 
@@ -149,7 +151,7 @@ func (z *Zencached) createNodeWorker(node Node, rebalanceChannel chan<- struct{}
 		disconnectionChannel: make(chan struct{}, z.configuration.NumConnectionsPerNode),
 	}
 
-	for i := 0; i < int(z.configuration.NumConnectionsPerNode); i++ {
+	for i := 0; i < z.configuration.NumConnectionsPerNode; i++ {
 
 		telnetConn, err := nw.NewTelnetFromNode()
 		if err != nil {
@@ -169,6 +171,15 @@ func (z *Zencached) createNodeWorker(node Node, rebalanceChannel chan<- struct{}
 // GetNodeWorkersByIndex - returns a telnet connection by node index
 func (z *Zencached) GetNodeWorkersByIndex(index int) (nw *nodeWorkers, err error) {
 
+	z.nodeWorkersMu.RLock()
+	defer z.nodeWorkersMu.RUnlock()
+
+	return z.getNodeWorkersByIndex(index)
+}
+
+// getNodeWorkersByIndex - caller must hold nodeWorkersMu.RLock()
+func (z *Zencached) getNodeWorkersByIndex(index int) (nw *nodeWorkers, err error) {
+
 	if !z.nodeWorkerArray[index].connected.Load() {
 		return nil, ErrTelnetConnectionIsClosed
 	}
@@ -180,6 +191,13 @@ func (z *Zencached) GetNodeWorkersByIndex(index int) (nw *nodeWorkers, err error
 func (z *Zencached) GetConnectedNodeWorkers(routerHash, path, key []byte) (nw *nodeWorkers, index int, err error) {
 
 	if z.notAvailable.Load() {
+		return nil, 0, ErrNoAvailableNodes
+	}
+
+	z.nodeWorkersMu.RLock()
+	defer z.nodeWorkersMu.RUnlock()
+
+	if len(z.nodeWorkerArray) == 0 {
 		return nil, 0, ErrNoAvailableNodes
 	}
 
@@ -201,18 +219,19 @@ func (z *Zencached) GetConnectedNodeWorkers(routerHash, path, key []byte) (nw *n
 
 	index = int(routerHash[len(routerHash)-1]) % len(z.nodeWorkerArray)
 
-	nw, err = z.GetNodeWorkersByIndex(index)
+	nw, err = z.getNodeWorkersByIndex(index)
 
 	return
 }
 
 // checkResponse - checks the memcached response
 func (nw *nodeWorkers) checkResponse(
+	ctx context.Context,
 	telnetConn *Telnet,
 	responseSet TelnetResponseSet,
 ) cmdResponse {
 
-	response, resultType, err := telnetConn.Read(responseSet)
+	response, resultType, err := telnetConn.Read(ctx, responseSet)
 	if err != nil {
 		return cmdResponse{resultType, nil, err}
 	}
@@ -225,14 +244,15 @@ func (nw *nodeWorkers) checkResponse(
 }
 
 func (nw *nodeWorkers) sendAndReadResponse(
+	ctx context.Context,
 	telnetConn *Telnet,
 	responseSet TelnetResponseSet,
 	renderedCmd []byte,
 ) cmdResponse {
 
-	err := telnetConn.Send(renderedCmd)
+	err := telnetConn.Send(ctx, renderedCmd)
 	if err == nil {
-		return nw.checkResponse(telnetConn, responseSet)
+		return nw.checkResponse(ctx, telnetConn, responseSet)
 	}
 
 	return cmdResponse{ResultTypeNone, nil, err}

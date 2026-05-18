@@ -2,9 +2,12 @@ package zencached
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -293,34 +296,41 @@ func (t *Telnet) Close() {
 
 	t.connection = nil
 
-	t.connCheckEndChan <- struct{}{}
+	select {
+	case t.connCheckEndChan <- struct{}{}:
+	default:
+	}
 }
 
 // send - send some command to the server
-func (t *Telnet) send(command ...[]byte) error {
+func (t *Telnet) send(ctx context.Context, command ...[]byte) error {
 
 	if t.onFailure.Load() {
 		return ErrConnectionWrite
 	}
 
 	var err error
-	var wrote bool
 
 	for _, c := range command {
 
 		if !t.metricsEnabled {
 
-			wrote = t.writePayload(c)
+			err = t.writePayload(ctx, c)
 
 		} else {
 
 			start := time.Now()
-			wrote = t.writePayload(c)
+			err = t.writePayload(ctx, c)
 			t.configuration.TelnetMetricsCollector.WriteElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
 			t.configuration.TelnetMetricsCollector.WriteDataSize(t.node.Host, len(c))
 		}
 
-		if !wrote {
+		if err != nil {
+
+			if errors.Is(err, context.DeadlineExceeded) {
+				return err
+			}
+
 			t.reportDisconnection()
 			return ErrConnectionWrite
 		}
@@ -330,18 +340,18 @@ func (t *Telnet) send(command ...[]byte) error {
 }
 
 // Send - send some command to the server
-func (t *Telnet) Send(command ...[]byte) error {
+func (t *Telnet) Send(ctx context.Context, command ...[]byte) error {
 
 	var err error
 
 	if !t.metricsEnabled {
 
-		err = t.send(command...)
+		err = t.send(ctx, command...)
 
 	} else {
 
 		start := time.Now()
-		err = t.send(command...)
+		err = t.send(ctx, command...)
 		t.configuration.TelnetMetricsCollector.SendElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
 	}
 
@@ -349,7 +359,7 @@ func (t *Telnet) Send(command ...[]byte) error {
 }
 
 // read - reads the payload from the active connection
-func (t *Telnet) read(responseSet TelnetResponseSet) ([]byte, ResultType, error) {
+func (t *Telnet) read(ctx context.Context, responseSet TelnetResponseSet) ([]byte, ResultType, error) {
 
 	if t.onFailure.Load() {
 		return nil, ResultTypeNone, ErrConnectionRead
@@ -363,7 +373,19 @@ func (t *Telnet) read(responseSet TelnetResponseSet) ([]byte, ResultType, error)
 
 mainLoop:
 	for {
-		err = t.connection.SetReadDeadline(time.Now().Add(t.configuration.MaxReadTimeout))
+		select {
+		case <-ctx.Done():
+			return nil, ResultTypeNone, ctx.Err()
+		default:
+		}
+
+		deadline := time.Now().Add(t.configuration.MaxReadTimeout)
+
+		if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+			deadline = ctxDeadline
+		}
+
+		err = t.connection.SetReadDeadline(deadline)
 		if err != nil {
 			if logh.ErrorEnabled {
 				t.logger.Error().Err(err).Msg("error setting read deadline")
@@ -394,8 +416,14 @@ mainLoop:
 	}
 
 	if err != nil && err != io.EOF {
+
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || errors.Is(err, os.ErrDeadlineExceeded) {
+			return nil, ResultTypeContextTimeout, context.DeadlineExceeded
+		}
+
 		t.reportDisconnection()
 		t.logConnectionError(err, read)
+
 		return nil, ResultTypeError, err
 	}
 
@@ -437,7 +465,7 @@ func findLastIndexOfByteSlice(s []byte, sep []byte) int {
 }
 
 // Read - reads the payload from the active connection
-func (t *Telnet) Read(responseSet TelnetResponseSet) ([]byte, ResultType, error) {
+func (t *Telnet) Read(ctx context.Context, responseSet TelnetResponseSet) ([]byte, ResultType, error) {
 
 	var data []byte
 	var resultType ResultType
@@ -445,12 +473,12 @@ func (t *Telnet) Read(responseSet TelnetResponseSet) ([]byte, ResultType, error)
 
 	if !t.metricsEnabled {
 
-		data, resultType, err = t.read(responseSet)
+		data, resultType, err = t.read(ctx, responseSet)
 
 	} else {
 
 		start := time.Now()
-		data, resultType, err = t.read(responseSet)
+		data, resultType, err = t.read(ctx, responseSet)
 		t.configuration.TelnetMetricsCollector.ReadElapsedTime(t.node.Host, time.Since(start).Nanoseconds())
 		t.configuration.TelnetMetricsCollector.ReadDataSize(t.node.Host, len(data))
 	}
@@ -459,27 +487,40 @@ func (t *Telnet) Read(responseSet TelnetResponseSet) ([]byte, ResultType, error)
 }
 
 // writePayload - writes the payload
-func (t *Telnet) writePayload(payload []byte) bool {
+func (t *Telnet) writePayload(ctx context.Context, payload []byte) error {
 
 	if t.connection == nil {
-		return false
+		return ErrConnectionWrite
 	}
 
-	err := t.connection.SetWriteDeadline(time.Now().Add(t.configuration.MaxWriteTimeout))
+	deadline := time.Now().Add(t.configuration.MaxWriteTimeout)
+
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+
+	err := t.connection.SetWriteDeadline(deadline)
 	if err != nil {
 		if logh.ErrorEnabled {
 			t.logger.Error().Err(err).Msg("error setting write deadline")
 		}
-		return false
+		return ErrConnectionWrite
 	}
 
-	_, err = t.connection.Write([]byte(payload))
+	_, err = t.connection.Write(payload)
 	if err != nil {
+
+		fmt.Printf("merda: %s", err.Error())
+
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || errors.Is(err, os.ErrDeadlineExceeded) {
+			return context.DeadlineExceeded
+		}
+
 		t.logConnectionError(err, write)
-		return false
+		return ErrConnectionWrite
 	}
 
-	return true
+	return nil
 }
 
 // logConnectionError - logs the connection error
@@ -520,18 +561,19 @@ func (t *Telnet) GetNodeHost() string {
 
 func (t *Telnet) reportDisconnection() {
 
+	if !t.onFailure.CompareAndSwap(false, true) {
+		return
+	}
+
 	defer func() {
 		if r := recover(); r != nil {
 			t.logger.Error().Msgf("panic recovered in reportDisconnection: %v", r)
 		}
 	}()
 
-	if t.onFailure.Load() || t.disconnectionChannel == nil {
-		return
+	if t.disconnectionChannel != nil {
+		t.disconnectionChannel <- struct{}{}
 	}
-
-	t.disconnectionChannel <- struct{}{}
-	t.onFailure.CompareAndSwap(false, true)
 
 	if logh.InfoEnabled {
 		t.logger.Info().Msg("connection failure reported")
