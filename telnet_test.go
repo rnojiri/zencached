@@ -21,7 +21,7 @@ import (
 )
 
 const numNodes int = 3
-const giantPayloadSize int = 20_000_000 // 20mb, more than the read buffer size
+const giantPayloadSize int = 50_000_000 // 20mb, more than the read buffer size
 
 var (
 	memcachedPodNames []string
