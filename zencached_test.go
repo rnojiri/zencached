@@ -553,6 +553,41 @@ func (ts *zencachedTestSuite) TestSetCommandNullValue() {
 	if !ts.Equal(zencached.ResultTypeNotFound.String(), result.Type.String(), "expected value from key \"%s\" to be found as null", key) {
 		return
 	}
+
+	if !ts.Equal([]byte(nil), result.Data, "expected values to be equal") {
+		return
+	}
+}
+
+// TestContextTimeoutGetCommand - tests a Get command with a context timeout, it should return an error and not crash the connection
+func (ts *zencachedTestSuite) TestContextTimeoutGetCommand() {
+
+	path := []byte("ctx-timeout-get-path")
+	key := []byte("ctx-timeout-get-key")
+	value := []byte(strings.Repeat("A", giantPayloadSize)) // 20MB value
+
+	_, err := ts.instance.Set(context.Background(), nil, path, key, value, defaultTTL)
+	ts.NoError(err, "error setting key for context timeout test")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+
+	_, err = ts.instance.Get(ctx, nil, path, key)
+	ts.ErrorIs(err, context.DeadlineExceeded, "expects a timeout error on Get")
+}
+
+// TestContextTimeoutSetCommand - tests a Set command with a context timeout, it should return an error and not crash the connection
+func (ts *zencachedTestSuite) TestContextTimeoutSetCommand() {
+
+	path := []byte("ctx-timeout-set-path")
+	key := []byte("ctx-timeout-set-key")
+	value := []byte(strings.Repeat("B", giantPayloadSize)) // 20MB value
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	defer cancel()
+
+	_, err := ts.instance.Set(ctx, nil, path, key, value, defaultTTL)
+	ts.ErrorIs(err, context.DeadlineExceeded, "expects a timeout error on Set")
 }
 
 func TestZencachedSuite(t *testing.T) {

@@ -203,6 +203,11 @@ func (t *Telnet) resolveServerAddress() (string, *net.TCPAddr, error) {
 // Connect - try to Connect the telnet server
 func (t *Telnet) Connect() error {
 
+	return t.connect(true)
+}
+
+func (t *Telnet) connect(startCheck bool) error {
+
 	if logh.DebugEnabled {
 		t.logger.Debug().Msgf("trying to connect to host: %s:%d", t.node.Host, t.node.Port)
 	}
@@ -244,7 +249,25 @@ func (t *Telnet) Connect() error {
 		t.logger.Info().Msgf("connected to host: %s", hostPort)
 	}
 
-	go t.checkConnection()
+	if startCheck {
+		go t.checkConnection()
+	}
+
+	return nil
+}
+
+func (t *Telnet) reconnect() error {
+
+	if logh.InfoEnabled {
+		t.logger.Info().Msg("reconnecting...")
+	}
+
+	t.close(false)
+
+	err := t.connect(false)
+	if err != nil {
+		return ErrTelnetConnectionIsClosed
+	}
 
 	return nil
 }
@@ -266,6 +289,11 @@ func (t *Telnet) dial() error {
 
 // Close - closes the active connection
 func (t *Telnet) Close() {
+
+	t.close(true)
+}
+
+func (t *Telnet) close(endCheck bool) {
 
 	if t.connection == nil {
 		return
@@ -296,9 +324,11 @@ func (t *Telnet) Close() {
 
 	t.connection = nil
 
-	select {
-	case t.connCheckEndChan <- struct{}{}:
-	default:
+	if endCheck {
+		select {
+		case t.connCheckEndChan <- struct{}{}:
+		default:
+		}
 	}
 }
 
@@ -371,26 +401,24 @@ func (t *Telnet) read(ctx context.Context, responseSet TelnetResponseSet) ([]byt
 	var bytesRead, fullBytes int
 	resultType := ResultTypeNone
 
+	deadline := time.Now().Add(t.configuration.MaxReadTimeout)
+
+	if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
+		deadline = ctxDeadline
+	}
+
 mainLoop:
 	for {
-		select {
-		case <-ctx.Done():
-			return nil, ResultTypeNone, ctx.Err()
-		default:
-		}
-
-		deadline := time.Now().Add(t.configuration.MaxReadTimeout)
-
-		if ctxDeadline, ok := ctx.Deadline(); ok && ctxDeadline.Before(deadline) {
-			deadline = ctxDeadline
-		}
 
 		err = t.connection.SetReadDeadline(deadline)
 		if err != nil {
 			if logh.ErrorEnabled {
 				t.logger.Error().Err(err).Msg("error setting read deadline")
 			}
-			break mainLoop
+
+			t.logConnectionError(err, read)
+
+			return nil, ResultTypeError, err
 		}
 
 		bytesRead, err = t.connection.Read(buffer)
@@ -418,6 +446,12 @@ mainLoop:
 	if err != nil && err != io.EOF {
 
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || errors.Is(err, os.ErrDeadlineExceeded) {
+
+			err = t.reconnect()
+			if err != nil {
+				return nil, ResultTypeError, err
+			}
+
 			return nil, ResultTypeContextTimeout, context.DeadlineExceeded
 		}
 
@@ -510,9 +544,13 @@ func (t *Telnet) writePayload(ctx context.Context, payload []byte) error {
 	_, err = t.connection.Write(payload)
 	if err != nil {
 
-		fmt.Printf("merda: %s", err.Error())
-
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) || errors.Is(err, os.ErrDeadlineExceeded) {
+
+			err = t.reconnect()
+			if err != nil {
+				return err
+			}
+
 			return context.DeadlineExceeded
 		}
 
