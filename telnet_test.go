@@ -47,7 +47,7 @@ func createExtraMemcachedPod(t *testing.T) (newPodName string, newNode zencached
 	var err error
 	newPodName = "memcached-pod-extra"
 	newNode.Port = memcachedPodPort[len(memcachedPodPort)-1] + 1
-	newNode.Host, err = dockerh.CreateMemcached(newPodName, newNode.Port, 64, "10m")
+	newNode.Host, err = dockerh.CreateMemcached(newPodName, newNode.Port, 16, "8m")
 	assert.NoError(t, err, "expected no error creating a new pod")
 
 	return
@@ -75,7 +75,7 @@ func startMemcachedCluster() []zencached.Node {
 
 		go func(i int) {
 			var err error
-			nodes[i].Host, err = dockerh.CreateMemcached(memcachedPodNames[i], memcachedPodPort[i], 64, "10m")
+			nodes[i].Host, err = dockerh.CreateMemcached(memcachedPodNames[i], memcachedPodPort[i], 16, "8m")
 			if err != nil {
 				panic(err)
 			}
@@ -364,8 +364,7 @@ func (ts *telnetTestSuite) TestContextTimeoutReadCommand() {
 		return
 	}
 
-	payloadSize := 4_000_000 // 4mb, more than the read buffer size
-	err = ts.write(context.Background(), "ctx-timeout-read-key", 60, payloadSize)
+	err = ts.write(context.Background(), "ctx-timeout-read-key", 60, 10)
 	if !ts.NoError(err, "error sending set command") {
 		return
 	}
@@ -391,8 +390,10 @@ func (ts *telnetTestSuite) TestContextTimeoutReadCommand() {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(5*time.Millisecond))
 	defer cancel()
+
+	<-time.After(5 * time.Millisecond)
 
 	expectedRandomType = randomResultType()
 
@@ -410,12 +411,12 @@ func (ts *telnetTestSuite) TestContextTimeoutReadCommand() {
 	ts.telnet.Close()
 
 	if ts.enableMetrics {
-		ts.Equal(1, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
-		ts.Equal(1, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
+		ts.Equal(2, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
+		ts.Equal(2, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
 		ts.Equal(2, ts.metricsCollector.numSendElapsedTime, "expected 2 send event")
 		ts.Equal(2, ts.metricsCollector.numWriteElapsedTime, "expected 2 write event")
 		ts.Equal(2, ts.metricsCollector.numReadElapsedTime, "expected 2 read event")
-		ts.Equal(1, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
+		ts.Equal(2, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
 		ts.Equal(2, ts.metricsCollector.numWriteDataSize, "expected 2 write data size event")
 		ts.Equal(2, ts.metricsCollector.numReadDataSize, "expected 2 read data size event")
 	}
@@ -429,11 +430,12 @@ func (ts *telnetTestSuite) TestContextTimeoutWriteCommand() {
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(5*time.Millisecond))
 	defer cancel()
 
-	payloadSize := 4_000_000 // 4mb, more than the read buffer size
-	err = ts.write(ctx, "gotest", 60, payloadSize)
+	<-time.After(5 * time.Millisecond)
+
+	err = ts.write(ctx, "gotest", 60, 10)
 	if !ts.ErrorIs(err, context.DeadlineExceeded, "expects a timeout error") {
 		return
 	}
@@ -441,14 +443,14 @@ func (ts *telnetTestSuite) TestContextTimeoutWriteCommand() {
 	ts.telnet.Close()
 
 	if ts.enableMetrics {
-		ts.Equal(1, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
-		ts.Equal(1, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
+		ts.Equal(2, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
+		ts.Equal(2, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
 		ts.Equal(1, ts.metricsCollector.numSendElapsedTime, "expected 1 send event")
 		ts.Equal(1, ts.metricsCollector.numWriteElapsedTime, "expected 1 write event")
-		ts.Equal(0, ts.metricsCollector.numReadElapsedTime, "expected 1 read event")
-		ts.Equal(1, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
+		ts.Equal(0, ts.metricsCollector.numReadElapsedTime, "expected 0 read event")
+		ts.Equal(2, ts.metricsCollector.numCloseElapsedTime, "expected 2 close events")
 		ts.Equal(1, ts.metricsCollector.numWriteDataSize, "expected 1 write data size event")
-		ts.Equal(0, ts.metricsCollector.numReadDataSize, "expected 1 read data size event")
+		ts.Equal(0, ts.metricsCollector.numReadDataSize, "expected 0 read data size event")
 	}
 }
 

@@ -342,6 +342,8 @@ func (z *Zencached) extractGetCmdValue(response []byte) ([]byte, error) {
 	for ; i < len(mcrValue); i++ {
 
 		if response[i] != mcrValue[i] {
+			fmt.Print(string(response[i]))
+			fmt.Print(string(mcrValue[i]))
 			return nil, fmt.Errorf("no value protocol found")
 		}
 	}
