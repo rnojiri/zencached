@@ -562,18 +562,36 @@ func (ts *zencachedTestSuite) TestSetCommandNullValue() {
 // TestContextTimeoutGetCommand - tests a Get command with a context timeout, it should return an error and not crash the connection
 func (ts *zencachedTestSuite) TestContextTimeoutGetCommand() {
 
-	path := []byte("ctx-timeout-get-path")
-	key := []byte("ctx-timeout-get-key")
-	value := []byte(strings.Repeat("A", giantPayloadSize))
+	pathA := []byte("ctx-timeout-get-path-a")
+	keyA := []byte("ctx-timeout-get-key-a")
+	valueA := []byte(strings.Repeat("A", 10))
 
-	_, err := ts.instance.Set(context.Background(), nil, path, key, value, defaultTTL)
-	ts.NoError(err, "error setting key for context timeout test")
+	_, err := ts.instance.Set(context.Background(), nil, pathA, keyA, valueA, defaultTTL)
+	ts.NoError(err, "error setting key a for context timeout test")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	pathB := []byte("ctx-timeout-get-path-b")
+	keyB := []byte("ctx-timeout-get-key-b")
+	valueB := []byte(strings.Repeat("B", 10))
+	_, err = ts.instance.Set(context.Background(), nil, pathB, keyB, valueB, defaultTTL)
+	ts.NoError(err, "error setting key b for context timeout test")
+
+	result, err := ts.instance.Get(context.Background(), nil, pathB, keyB)
+	ts.NoError(err, "error getting key b for context timeout test")
+
+	ts.Equal(valueB, result.Data, "expected value for key b to match")
+
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(5*time.Millisecond))
 	defer cancel()
 
-	_, err = ts.instance.Get(ctx, nil, path, key)
+	<-time.After(5 * time.Millisecond)
+
+	_, err = ts.instance.Get(ctx, nil, pathA, keyA)
 	ts.ErrorIs(err, context.DeadlineExceeded, "expects a timeout error on Get")
+
+	result, err = ts.instance.Get(context.Background(), nil, pathB, keyB)
+	ts.NoError(err, "error getting key b for context timeout test")
+
+	ts.Equal(valueB, result.Data, "expected value for key b to match")
 }
 
 // TestContextTimeoutSetCommand - tests a Set command with a context timeout, it should return an error and not crash the connection
@@ -581,10 +599,12 @@ func (ts *zencachedTestSuite) TestContextTimeoutSetCommand() {
 
 	path := []byte("ctx-timeout-set-path")
 	key := []byte("ctx-timeout-set-key")
-	value := []byte(strings.Repeat("B", giantPayloadSize))
+	value := []byte(strings.Repeat("B", 10))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(5*time.Millisecond))
 	defer cancel()
+
+	<-time.After(5 * time.Millisecond)
 
 	_, err := ts.instance.Set(ctx, nil, path, key, value, defaultTTL)
 	ts.ErrorIs(err, context.DeadlineExceeded, "expects a timeout error on Set")
