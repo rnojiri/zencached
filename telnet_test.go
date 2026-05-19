@@ -411,12 +411,12 @@ func (ts *telnetTestSuite) TestContextTimeoutReadCommand() {
 	ts.telnet.Close()
 
 	if ts.enableMetrics {
-		ts.Equal(1, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
-		ts.Equal(1, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
+		ts.Equal(2, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
+		ts.Equal(2, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
 		ts.Equal(2, ts.metricsCollector.numSendElapsedTime, "expected 2 send event")
 		ts.Equal(2, ts.metricsCollector.numWriteElapsedTime, "expected 2 write event")
 		ts.Equal(2, ts.metricsCollector.numReadElapsedTime, "expected 2 read event")
-		ts.Equal(1, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
+		ts.Equal(2, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
 		ts.Equal(2, ts.metricsCollector.numWriteDataSize, "expected 2 write data size event")
 		ts.Equal(2, ts.metricsCollector.numReadDataSize, "expected 2 read data size event")
 	}
@@ -442,12 +442,12 @@ func (ts *telnetTestSuite) TestContextTimeoutWriteCommand() {
 	ts.telnet.Close()
 
 	if ts.enableMetrics {
-		ts.Equal(1, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
-		ts.Equal(1, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
+		ts.Equal(2, ts.metricsCollector.numResolveAddressElapsedTime, "expected a resolve address event")
+		ts.Equal(2, ts.metricsCollector.numDialElapsedTime, "expected a dial event")
 		ts.Equal(1, ts.metricsCollector.numSendElapsedTime, "expected 1 send event")
 		ts.Equal(1, ts.metricsCollector.numWriteElapsedTime, "expected 1 write event")
 		ts.Equal(0, ts.metricsCollector.numReadElapsedTime, "expected 0 read event")
-		ts.Equal(1, ts.metricsCollector.numCloseElapsedTime, "expected a close event")
+		ts.Equal(2, ts.metricsCollector.numCloseElapsedTime, "expected 2 close events")
 		ts.Equal(1, ts.metricsCollector.numWriteDataSize, "expected 1 write data size event")
 		ts.Equal(0, ts.metricsCollector.numReadDataSize, "expected 1 read data size event")
 	}
