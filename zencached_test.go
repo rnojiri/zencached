@@ -564,7 +564,7 @@ func (ts *zencachedTestSuite) TestContextTimeoutGetCommand() {
 
 	path := []byte("ctx-timeout-get-path")
 	key := []byte("ctx-timeout-get-key")
-	value := []byte(strings.Repeat("A", giantPayloadSize)) // 20MB value
+	value := []byte(strings.Repeat("A", giantPayloadSize))
 
 	_, err := ts.instance.Set(context.Background(), nil, path, key, value, defaultTTL)
 	ts.NoError(err, "error setting key for context timeout test")
@@ -581,7 +581,7 @@ func (ts *zencachedTestSuite) TestContextTimeoutSetCommand() {
 
 	path := []byte("ctx-timeout-set-path")
 	key := []byte("ctx-timeout-set-key")
-	value := []byte(strings.Repeat("B", giantPayloadSize)) // 20MB value
+	value := []byte(strings.Repeat("B", giantPayloadSize))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
 	defer cancel()

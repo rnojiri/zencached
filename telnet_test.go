@@ -21,7 +21,7 @@ import (
 )
 
 const numNodes int = 3
-const giantPayloadSize int = 50_000_000 // 20mb, more than the read buffer size
+const giantPayloadSize int = 100_000_000 // 100mb, more than the read buffer size
 
 var (
 	memcachedPodNames []string
@@ -48,7 +48,7 @@ func createExtraMemcachedPod(t *testing.T) (newPodName string, newNode zencached
 	var err error
 	newPodName = "memcached-pod-extra"
 	newNode.Port = memcachedPodPort[len(memcachedPodPort)-1] + 1
-	newNode.Host, err = dockerh.CreateMemcached(newPodName, newNode.Port, 128, "64m")
+	newNode.Host, err = dockerh.CreateMemcached(newPodName, newNode.Port, 200, "100m")
 	assert.NoError(t, err, "expected no error creating a new pod")
 
 	return
@@ -76,7 +76,7 @@ func startMemcachedCluster() []zencached.Node {
 
 		go func(i int) {
 			var err error
-			nodes[i].Host, err = dockerh.CreateMemcached(memcachedPodNames[i], memcachedPodPort[i], 128, "64m")
+			nodes[i].Host, err = dockerh.CreateMemcached(memcachedPodNames[i], memcachedPodPort[i], 200, "100m")
 			if err != nil {
 				panic(err)
 			}
