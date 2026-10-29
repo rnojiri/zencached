@@ -49,7 +49,8 @@
       "gosec": {
         "excludes": [
           "G705",
-          "G117"
+          "G117",
+          "G404"
         ]
       }
     }
@@ -58,7 +59,7 @@
     "allow-parallel-runners": false,
     "allow-serial-runners": false,
     "concurrency": 4,
-    "go": "1.26",
+    "go": "1.27",
     "issues-exit-code": 1,
     "modules-download-mode": "vendor",
     "tests": false

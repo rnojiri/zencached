@@ -1,10 +1,10 @@
 module github.com/rnojiri/zencached
 
-go 1.26.2
+go 1.27.0
 
 require (
 	github.com/brianvoe/gofakeit v3.18.0+incompatible
-	github.com/klauspost/compress v1.18.6
+	github.com/klauspost/compress v1.18.7
 	github.com/rnojiri/dockerh v1.4.0
 	github.com/rnojiri/logh v1.1.1
 	github.com/stretchr/testify v1.11.1
@@ -17,6 +17,6 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rs/zerolog v1.34.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
