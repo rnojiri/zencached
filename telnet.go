@@ -272,7 +272,6 @@ func (t *Telnet) reconnect() error {
 	return nil
 }
 
-// dialTCP - opens a TCP connection to the address, giving up after the host connection timeout
 func (t *Telnet) dialTCP(address *net.TCPAddr) (*net.TCPConn, error) {
 
 	dialer := net.Dialer{Timeout: t.configuration.HostConnectionTimeout}
