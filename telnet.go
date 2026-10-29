@@ -153,7 +153,7 @@ func (t *Telnet) checkConnection() {
 				return
 			}
 
-			connection, err := net.DialTCP("tcp", nil, address)
+			connection, err := t.dialTCP(address)
 			if err != nil {
 				t.reportDisconnection()
 				if logh.ErrorEnabled {
@@ -272,11 +272,23 @@ func (t *Telnet) reconnect() error {
 	return nil
 }
 
+func (t *Telnet) dialTCP(address *net.TCPAddr) (*net.TCPConn, error) {
+
+	dialer := net.Dialer{Timeout: t.configuration.HostConnectionTimeout}
+
+	connection, err := dialer.Dial("tcp", address.String())
+	if err != nil {
+		return nil, err
+	}
+
+	return connection.(*net.TCPConn), nil
+}
+
 // dial - connects the telnet client
 func (t *Telnet) dial() error {
 
 	var err error
-	t.connection, err = net.DialTCP("tcp", nil, t.address)
+	t.connection, err = t.dialTCP(t.address)
 	if err != nil {
 		if logh.ErrorEnabled {
 			t.logger.Error().Err(err).Msgf("error connecting to address: %s", t.address.String())
