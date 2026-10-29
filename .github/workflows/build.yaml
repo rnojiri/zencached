@@ -1,0 +1,88 @@
+name: Build
+
+on:
+  push:
+    branches: [ '**' ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
+
+jobs:
+
+  check-skip:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+    steps:
+      - name: Check PR title for [skip ci]
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let skip = false;
+            try {
+              const { data: prs } = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                commit_sha: context.sha,
+              });
+              skip = prs.some((pr) => pr.title.toLowerCase().includes('[skip ci]'));
+            } catch (e) {
+              core.warning(`PR lookup failed, running CI: ${e.message}`);
+            }
+            core.setOutput('skip', skip ? 'true' : 'false');
+
+  test:
+    needs: check-skip
+    if: needs.check-skip.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: "go.mod"
+
+      - name: Check go.mod/go.sum are tidy
+        run: |
+          go mod vendor
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Get golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+
+      - name: Run golangci-lint
+        run: golangci-lint run
+
+      - name: Run tests
+        run: go test -count 1 -v -timeout 10m ./...
+
+  release:
+    needs: [ check-skip, test ]
+    if: github.ref == 'refs/heads/master' && needs.check-skip.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Create tag and release
+        run: npx --yes semantic-release@24
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
